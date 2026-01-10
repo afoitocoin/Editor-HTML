@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#00ff55">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Editor HTML 1.8.3 - S24 Ultra (UltraView Fix)</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/lint.min.css">
+
+<style>
+:root{
+  --green:#00ff55;
+  --bg:#000;
+  --panel:#030303;
+  --border:rgba(0,255,85,.65);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--green);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+.app{display:flex;flex-direction:column;height:100%}
+
+/* ONE-LINE, HORIZONTAL SCROLL TOOLBAR */
+.toolbar{
+  display:flex; align-items:center; gap:8px;
+  padding:8px calc(env(safe-area-inset-right) + 8px) 8px calc(env(safe-area-inset-left) + 8px);
+  overflow-x:auto; white-space:nowrap;
+  border-bottom:1px solid var(--border);
+  -webkit-overflow-scrolling:touch;
+}
+.toolbar::-webkit-scrollbar{height:6px}
+.toolbar::-webkit-scrollbar-thumb{background:rgba(0,255,85,.25);border-radius:999px}
+
+.btn,.toolbar input,.pill{
+  background:var(--bg);
+  color:var(--green);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:10px 14px;
+  font-size:14px;
+  line-height:1;
+  flex:0 0 auto;
+  min-height:44px;
+}
+.btn:active{transform:scale(.99)}
+.toolbar input{
+  outline:none;
+  min-width:220px;
+  padding-left:14px;
+}
+.pill{
+  border-style:dashed;
+  padding:10px 12px;
+  opacity:.95;
+}
+
+.editor-wrap{flex:1;min-height:0}
+.CodeMirror{
+  height:100%;
+  font-size:15px;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+/* Gutter flexível */
+.CodeMirror-gutters{background:#050505;border-right:1px solid var(--border);}
+.CodeMirror-linenumber{padding:0 6px;}
+.CodeMirror-lines{padding:0}
+.CodeMirror pre{padding:0 8px}
+
+/* CodeMirror: fundo preto + syntax highlighting vivo (Monokai) */
+.cm-s-monokai.CodeMirror{background:#000 !important;}
+.cm-s-monokai .CodeMirror-gutters{background:#050505 !important;}
+.CodeMirror-foldgutter-open,
+.CodeMirror-foldgutter-folded{
+  color: var(--green);
+}
+
+
+/* OVERLAYS */
+.overlay{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.86);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:100;
+}
+.box{
+  width:min(520px,92vw);
+  max-height:86vh;
+  overflow:auto;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:14px;
+  box-shadow:0 0 0 1px rgba(0,255,85,.08) inset;
+}
+.box h3{margin:6px 0 10px 0;font-size:16px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row > *{flex:1 1 auto}
+.field{
+  width:100%;
+  background:var(--bg);
+  color:var(--green);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px 12px;
+  font-size:14px;
+  min-height:44px;
+  outline:none;
+}
+.small{font-size:12px;opacity:.85}
+.hr{height:1px;background:rgba(0,255,85,.18);margin:12px 0}
+
+/* Preview (native) */
+#previewOverlay{background:#000;}
+.previewControls{
+  position:fixed;
+  top:calc(env(safe-area-inset-top) + 8px);
+  right:calc(env(safe-area-inset-right) + 8px);
+  display:flex;
+  gap:8px;
+  z-index:101;
+}
+.pvBtn{
+  width:34px;height:34px;
+  min-width:34px;min-height:34px;
+  padding:0;
+  border-radius:999px;
+  border:1px solid rgba(0,255,85,.35);
+  background:rgba(0,0,0,.25);
+  color:var(--green);
+  font-size:22px;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.pvBtn:active{transform:scale(.98)}
+.previewNative{
+  position:fixed;
+  inset:0;
+  background:#000;
+}
+.previewNative iframe{
+  width:100%;
+  height:100%;
+  border:0;
+  background:#fff;
+}
+
+
+
+
+/* Checkbox (pop-ups) */
+input[type="checkbox"], input[type="radio"]{
+  accent-color: var(--green);
+}
+
+/* Code highlighter (neon marker) */
+.cm-code-highlight{
+  background:#00ff55 !important;
+  color:#000 !important;
+}
+
+
+/* Search highlights */
+.cm-search-hit{ background: rgba(255,255,0,.18); border-bottom: 1px solid rgba(255,255,0,.45); }
+.cm-search-hit-current{ background: rgba(255,255,0,.35); border-bottom: 1px solid rgba(255,255,0,.9); }
+.hidden{display:none !important}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+  <div class="toolbar" id="toolbar">
+    <button class="btn" id="btnMenu" data-tb-id="btnMenu">Menu</button>
+    <button class="btn" id="btnNovo" data-tb-id="btnNovo">Novo</button>
+    <button class="btn" id="btnAbrir" data-tb-id="btnAbrir">Abrir</button>
+    <button class="btn" id="btnSalvar" data-tb-id="btnSalvar">Salvar</button>
+    <button class="btn" id="btnFerramentas" data-tb-id="btnFerramentas">Ferramentas</button>
+
+
+    <button class="btn" id="btnCodigos" data-tb-id="btnCodigos">Códigos</button>
+    <button class="btn" id="btnTelaCheia" data-tb-id="btnTelaCheia">Tela Cheia</button>
+    <button class="btn" id="btnLint" data-tb-id="btnLint">Lint</button>
+
+    <button class="btn" id="btnSelectAll" data-tb-id="btnSelectAll">Selecionar tudo</button>
+    <button class="btn" id="btnCopiar" data-tb-id="btnCopiar">Copiar</button>
+    <button class="btn" id="btnColar" data-tb-id="btnColar">Colar</button>
+    <button class="btn" id="btnApagarSelecao" data-tb-id="btnApagarSelecao">Apagar Seleção</button>
+    <button class="btn" id="btnDesfazer" data-tb-id="btnDesfazer">Desfazer</button>
+    <button class="btn" id="btnRefazer" data-tb-id="btnRefazer">Refazer</button>
+    <button class="btn" id="btnQuebra" data-tb-id="btnQuebra">Quebra: OFF</button>
+    <button class="btn" id="btnFonteMenos" data-tb-id="btnFonteMenos">Fonte -</button>
+    <button class="btn" id="btnFonteMais" data-tb-id="btnFonteMais">Fonte +</button>
+    <button class="btn" id="btnCompartilhar" data-tb-id="btnCompartilhar">Compartilhar</button>
+
+<input id="search" inputmode="search" placeholder="Pesquisar..." autocomplete="off" spellcheck="false" data-tb-id="search">
+    <button class="btn" id="btnLimparPesquisa" data-tb-id="btnLimparPesquisa">Limpar Pesquisa</button>
+    <button class="btn" id="btnPrev" data-tb-id="btnPrev">&lt;</button>
+    <button class="btn" id="btnNext" data-tb-id="btnNext">&gt;</button>
+    <span class="pill" id="searchCount" data-tb-id="searchCount">0 de 0</span>
+    <span class="pill" id="fileName" data-tb-id="fileName">index.html</span>
+
+    <button class="btn" id="btnVisualizar" data-tb-id="btnVisualizar">Visualizar</button>
+    <button class="btn" id="btnFormatar" data-tb-id="btnFormatar">Formatar</button>
+    <button class="btn" id="btnIrLinha" data-tb-id="btnIrLinha">Ir p/ linha</button>
+        <button class="btn" id="btnSelecionarLinha" data-tb-id="btnSelecionarLinha">Selecionar Linha</button>
+<button class="btn" id="btnSubstituir" data-tb-id="btnSubstituir">Substituir</button>
+  </div>
+
+  <div class="editor-wrap">
+    <textarea id="editor"></textarea>
+  </div>
+</div>
+
+<!-- hidden input for open -->
+<input id="fileInput" type="file" accept=".html,.htm,.txt,.css,.js,.json,.md,*/*" class="hidden">
+
+<!-- MENU overlay -->
+<div class="overlay" id="menuOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Menu</h3>
+    <div class="row">
+      <button class="btn" id="mSelectAll">Selecionar tudo</button>
+      <button class="btn" id="mCopiar">Copiar</button>
+      <button class="btn" id="mColar">Colar</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="mDesfazer">Desfazer</button>
+      <button class="btn" id="mRefazer">Refazer</button>
+    </div>
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="mQuebra">Quebra: OFF</button>
+      <button class="btn" id="mFonteMenos">Fonte -</button>
+      <button class="btn" id="mFonteMais">Fonte +</button>
+    </div>
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="mCompartilhar">Compartilhar</button>
+      <button class="btn" id="mFecharMenu">Fechar</button>
+    </div>
+    <div class="small" style="margin-top:10px">
+      Dica: deslize a barra superior para o lado para acessar todos os botões.
+    </div>
+  </div>
+</div>
+
+<!-- FERRAMENTAS overlay -->
+<div class="overlay" id="toolsOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Ferramentas</h3>
+    <div class="row">
+      <button class="btn" id="tOrganizarAbas">Organizar Abas</button>
+      <button class="btn" id="tOrganizarBarra">Barra Superior</button>
+      <button class="btn" id="tImgsBase64">Imagens Base64</button>
+      <button class="btn" id="tFechar">Fechar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- CÓDIGOS overlay -->
+<div class="overlay" id="codesOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Códigos</h3>
+
+    <div class="row" style="align-items:flex-start">
+      <label class="pill" style="display:flex;align-items:center;gap:10px;padding:12px 14px">
+        <input type="checkbox" id="codeChkHtml">
+        <span>HTML</span>
+      </label>
+
+      <label class="pill" style="display:flex;align-items:center;gap:10px;padding:12px 14px">
+        <input type="checkbox" id="codeChkCss">
+        <span>CSS</span>
+      </label>
+
+      <label class="pill" style="display:flex;align-items:center;gap:10px;padding:12px 14px">
+        <input type="checkbox" id="codeChkJs">
+        <span>JavaScript</span>
+      </label>
+
+      <label class="pill" style="display:flex;align-items:center;gap:10px;padding:12px 14px">
+        <input type="checkbox" id="codeChkFn">
+        <span>Função/Bloco</span>
+      </label>
+    </div>
+
+    <div class="small" style="margin:10px 0 6px 4px">Na opção Função/Bloco, digite o nome para destacar (ex: minhaFuncao).</div>
+    <input class="field" id="codeFnName" placeholder="Nome da Função/Bloco..." spellcheck="false">
+
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="codesClose">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- LINT overlay -->
+<div class="overlay" id="lintOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Lint</h3>
+    <div class="small" style="margin-bottom:10px">
+      Lint On monitora o que você digita em tempo real e mostra avisos/erros.
+    </div>
+    <div class="row">
+      <button class="btn" id="lintOn">Lint On</button>
+      <button class="btn" id="lintOff">Lint Off</button>
+      <button class="btn" id="lintClose">Fechar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ORGANIZAR ABAS overlay -->
+<div class="overlay" id="tabsOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Organizar Abas</h3>
+    <div class="small">Estrutura pronta. (A ordenação real será aplicada quando as abas reais estiverem ativas.)</div>
+    <div class="hr"></div>
+    <div id="tabsList"></div>
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="tabsFechar">Fechar</button>
+    </div>
+  </div>
+</div>
+<!-- ORGANIZAR BARRA SUPERIOR overlay -->
+<div class="overlay" id="toolbarOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Barra Superior</h3>
+    <div class="small">Use ↑ e ↓ para alterar a posição de cada item na barra superior.</div>
+    <div class="hr"></div>
+    <div id="toolbarList"></div>
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="tbFechar">Fechar</button>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- SELECIONAR LINHAS overlay -->
+<div class="overlay" id="selectLineOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Selecionar Linha</h3>
+    <div class="small" style="margin-bottom:10px">Selecione um intervalo de linhas (incluindo as extremidades).</div>
+    <div class="row">
+      <div style="flex:1 1 100%">
+        <div class="small" style="margin:0 0 6px 4px">Selecionar da Linha:</div>
+        <input class="field" id="selLineFrom" inputmode="numeric" placeholder="1">
+      </div>
+      <div style="flex:1 1 100%">
+        <div class="small" style="margin:0 0 6px 4px">Até a Linha:</div>
+        <input class="field" id="selLineTo" inputmode="numeric" placeholder="1">
+      </div>
+    </div>
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="selLineOk">Ok</button>
+      <button class="btn" id="selLineClose">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUBSTITUIR overlay -->
+<div class="overlay" id="replaceOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Substituir</h3>
+    <input class="field" id="repFind" placeholder="Procurar..." spellcheck="false">
+    <div style="height:10px"></div>
+    <input class="field" id="repWith" placeholder="Substituir por..." spellcheck="false">
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="repOne">Substituir 1</button>
+      <button class="btn" id="repAll">Substituir tudo</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="repClose">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- PREVIEW overlay -->
+<div class="overlay" id="previewOverlay" aria-hidden="true">
+  <div class="previewControls">
+    <button class="pvBtn" id="pvClose" aria-label="Fechar">×</button>
+    <button class="pvBtn" id="pvReload" aria-label="Atualizar">○</button>
+  </div>
+  <div class="previewNative">
+    <iframe id="previewFrame" sandbox="allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts"></iframe>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/lint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/htmlhint/1.1.4/htmlhint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/csslint/1.0.5/csslint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jshint/2.13.6/jshint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/html-lint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/css-lint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/javascript-lint.min.js"></script>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/brace-fold.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/xml-fold.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/indent-fold.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/comment-fold.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closetag.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.15.1/beautify-html.min.js"></script>
+
+<script>
+/* =========================================================
+   Fix principal: na 1.8 anterior o JS ficou TRUNCADO,
+   isso quebrava o parser e NENHUM botão funcionava.
+   Esta versão está completa e sem erros de sintaxe.
+========================================================= */
+
+/* =====================
+   STATE
+===================== */
+let currentHandle = null;
+let currentFileName = "index.html";
+let isDirty = false;
+let lastQuery = "";
+let matches = [];
+let matchIndex = -1;
+let fontSize = 15;
+let lineWrap = false;
+let lintEnabled = false;
+
+
+let searchMarks = [];
+let refreshTimer = null;
+/* =====================
+   CODEMIRROR
+===================== */
+const cm = CodeMirror.fromTextArea(document.getElementById("editor"), {
+mode: "htmlmixed",
+theme: "monokai",
+lineNumbers: true,
+lineWrapping: lineWrap,
+viewportMargin: 20,
+
+/* Addons (mantém o layout, adiciona recursos) */
+foldGutter: true,
+gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter", "CodeMirror-lint-markers"],
+matchBrackets: true,
+autoCloseBrackets: true,
+autoCloseTags: true,
+styleActiveLine: true,
+lint: false
+});
+cm.setSize("100%", "100%");
+
+function setDirty(v){ isDirty = v; updateFilePill(); }
+function updateFilePill(){
+  const pill = document.getElementById("fileName");
+  const star = isDirty ? " •alterado" : "";
+  pill.textContent = `${currentFileName}${star}`;
+}
+
+cm.on("change", () => {
+  setDirty(true);
+  scheduleAutosave();
+  if (document.getElementById("search").value.trim()) scheduleRefreshMatches(false);
+  // manter destaques atualizados quando ativo
+  if(
+    document.getElementById("codeChkHtml")?.checked ||
+    document.getElementById("codeChkCss")?.checked ||
+    document.getElementById("codeChkJs")?.checked ||
+    document.getElementById("codeChkFn")?.checked
+  ){
+    try{ syncCodeHighlightToggles(); }catch(e){}
+  }
+});
+
+/* =====================
+   OVERLAYS
+===================== */
+const menuOverlay = document.getElementById("menuOverlay");
+const toolsOverlay = document.getElementById("toolsOverlay");
+const codesOverlay = document.getElementById("codesOverlay");
+const lintOverlay = document.getElementById("lintOverlay");
+const tabsOverlay = document.getElementById("tabsOverlay");
+const replaceOverlay = document.getElementById("replaceOverlay");
+const previewOverlay = document.getElementById("previewOverlay");
+const toolbarOverlay = document.getElementById("toolbarOverlay");
+
+const selectLineOverlay = document.getElementById("selectLineOverlay");
+function openOverlay(el){ el.style.display = "flex"; el.setAttribute("aria-hidden","false"); }
+function closeOverlay(el){ el.style.display = "none"; el.setAttribute("aria-hidden","true"); }
+
+[menuOverlay, toolsOverlay, codesOverlay, lintOverlay, tabsOverlay, toolbarOverlay, selectLineOverlay, replaceOverlay, previewOverlay].forEach(ov => {
+  ov.addEventListener("click", (e)=>{ if(e.target === ov) closeOverlay(ov); });
+});
+
+
+/* =====================
+   FULLSCREEN
+===================== */
+async function toggleFullscreen(){
+  try{
+    if(document.fullscreenElement){
+      await document.exitFullscreen();
+      return;
+    }
+    const el = document.documentElement;
+    if(el.requestFullscreen) await el.requestFullscreen({navigationUI:"hide"});
+    // tentar travar orientação (se disponível)
+    try{
+      if(screen.orientation && screen.orientation.lock) await screen.orientation.lock("portrait");
+    }catch(e){}
+  }catch(e){}
+}
+
+/* =====================
+   CODE HIGHLIGHTER
+===================== */
+let codeMarks = { html: [], css: [], js: [], fn: [] };
+
+function clearMarks(list){
+  if(!list || !list.length) return;
+  list.forEach(m=>{ try{ m.clear(); }catch(e){} });
+  list.length = 0;
+}
+
+function clearCodeHighlights(kind){
+  if(kind){
+    clearMarks(codeMarks[kind]);
+    return;
+  }
+  clearMarks(codeMarks.html);
+  clearMarks(codeMarks.css);
+  clearMarks(codeMarks.js);
+  clearMarks(codeMarks.fn);
+}
+
+function markRange(kind, fromIdx, toIdx){
+  const from = cm.posFromIndex(fromIdx);
+  const to = cm.posFromIndex(toIdx);
+  const m = cm.markText(from, to, {className:"cm-code-highlight"});
+  codeMarks[kind].push(m);
+}
+
+function getBlockRanges(src, openRe, closeRe){
+  const ranges = [];
+  let m;
+  openRe.lastIndex = 0;
+  while((m = openRe.exec(src))){
+    const start = m.index;
+    closeRe.lastIndex = openRe.lastIndex;
+    const c = closeRe.exec(src);
+    if(!c) break;
+    const end = c.index + c[0].length;
+    ranges.push({start, end});
+    openRe.lastIndex = end;
+  }
+  return ranges;
+}
+
+function mergeRanges(ranges){
+  if(!ranges.length) return [];
+  ranges.sort((a,b)=>a.start-b.start);
+  const out = [ranges[0]];
+  for(let i=1;i<ranges.length;i++){
+    const r = ranges[i];
+    const last = out[out.length-1];
+    if(r.start <= last.end){
+      last.end = Math.max(last.end, r.end);
+    }else out.push(r);
+  }
+  return out;
+}
+
+function complementRanges(ranges, totalLen){
+  const out = [];
+  let cur = 0;
+  ranges.forEach(r=>{
+    if(cur < r.start) out.push({start:cur, end:r.start});
+    cur = Math.max(cur, r.end);
+  });
+  if(cur < totalLen) out.push({start:cur, end:totalLen});
+  return out;
+}
+
+function applyCodeHighlightCss(){
+  clearCodeHighlights("css");
+  const src = cm.getValue();
+  const styleRanges = getBlockRanges(src, /<style\b[^>]*>/ig, /<\/style\s*>/ig);
+  if(!styleRanges.length) return;
+  const merged = mergeRanges(styleRanges);
+  cm.operation(()=>{
+    merged.forEach(r=> markRange("css", r.start, r.end));
+  });
+}
+
+function applyCodeHighlightJs(){
+  clearCodeHighlights("js");
+  const src = cm.getValue();
+  const scriptRanges = getBlockRanges(src, /<script\b[^>]*>/ig, /<\/script\s*>/ig);
+  if(!scriptRanges.length) return;
+  const merged = mergeRanges(scriptRanges);
+  cm.operation(()=>{
+    merged.forEach(r=> markRange("js", r.start, r.end));
+  });
+}
+
+function applyCodeHighlightHtml(){
+  clearCodeHighlights("html");
+  const src = cm.getValue();
+  const styleRanges = getBlockRanges(src, /<style\b[^>]*>/ig, /<\/style\s*>/ig);
+  const scriptRanges = getBlockRanges(src, /<script\b[^>]*>/ig, /<\/script\s*>/ig);
+  const merged = mergeRanges([...styleRanges, ...scriptRanges]);
+  const parts = complementRanges(merged, src.length);
+  cm.operation(()=>{
+    parts.forEach(r=>{
+      if(r.end > r.start) markRange("html", r.start, r.end);
+    });
+  });
+}
+
+function findFunctionOrBlockRange(src, name){
+  if(!name) return null;
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp("\\bfunction\\s+"+esc+"\\b"),
+    new RegExp("\\b"+esc+"\\s*=\\s*function\\b"),
+    new RegExp("\\b"+esc+"\\s*:\\s*function\\b"),
+    new RegExp("\\b"+esc+"\\s*\\(", "g")
+  ];
+
+  let idx = -1;
+  let matchLen = 0;
+  for(const p of patterns){
+    const m = p.exec(src);
+    if(m){
+      idx = m.index;
+      matchLen = m[0].length;
+      break;
+    }
+  }
+  if(idx < 0) return null;
+
+  // achar primeira chave { após o match
+  let i = idx + matchLen;
+  while(i < src.length && src[i] !== "{") i++;
+  if(i >= src.length) return null;
+
+  let depth = 0;
+  let inStr = null;
+  let inLineC = false;
+  let inBlockC = false;
+
+  for(let j=i; j<src.length; j++){
+    const ch = src[j];
+    const nxt = src[j+1];
+
+    if(inLineC){
+      if(ch === "\n") inLineC = false;
+      continue;
+    }
+    if(inBlockC){
+      if(ch === "*" && nxt === "/"){ inBlockC = false; j++; }
+      continue;
+    }
+    if(inStr){
+      if(ch === "\\" ){ j++; continue; }
+      if(ch === inStr) inStr = null;
+      continue;
+    }
+
+    if(ch === "'" || ch === '"' || ch === "`"){ inStr = ch; continue; }
+    if(ch === "/" && nxt === "/"){ inLineC = true; j++; continue; }
+    if(ch === "/" && nxt === "*"){ inBlockC = true; j++; continue; }
+
+    if(ch === "{") depth++;
+    else if(ch === "}"){
+      depth--;
+      if(depth === 0){
+        return {start: idx, end: j+1};
+      }
+    }
+  }
+  return {start: idx, end: Math.min(src.length, idx + 5000)};
+}
+
+function applyCodeHighlightFn(){
+  clearCodeHighlights("fn");
+  const name = document.getElementById("codeFnName").value.trim();
+  if(!name) return;
+
+  const src = cm.getValue();
+  // Preferir procurar dentro de <script> se existir, senão no arquivo inteiro
+  const scriptRanges = getBlockRanges(src, /<script\b[^>]*>/ig, /<\/script\s*>/ig);
+  const rangesToSearch = scriptRanges.length ? mergeRanges(scriptRanges) : [{start:0, end:src.length}];
+
+  cm.operation(()=>{
+    for(const r of rangesToSearch){
+      const chunk = src.slice(r.start, r.end);
+      const found = findFunctionOrBlockRange(chunk, name);
+      if(found){
+        markRange("fn", r.start + found.start, r.start + found.end);
+        break;
+      }
+    }
+  });
+}
+
+function syncCodeHighlightToggles(){
+  const html = document.getElementById("codeChkHtml").checked;
+  const css = document.getElementById("codeChkCss").checked;
+  const js = document.getElementById("codeChkJs").checked;
+  const fn = document.getElementById("codeChkFn").checked;
+
+  if(html) applyCodeHighlightHtml(); else clearCodeHighlights("html");
+  if(css) applyCodeHighlightCss(); else clearCodeHighlights("css");
+  if(js) applyCodeHighlightJs(); else clearCodeHighlights("js");
+  if(fn) applyCodeHighlightFn(); else clearCodeHighlights("fn");
+}
+
+/* =====================
+   LINT
+===================== */
+function setLint(on){
+  lintEnabled = !!on;
+  cm.setOption("lint", lintEnabled);
+}
+
+/* =====================
+   BUTTON WIRING (TOP)
+===================== */
+document.getElementById("btnMenu").onclick = () => openOverlay(menuOverlay);
+document.getElementById("btnNovo").onclick = novo;
+document.getElementById("btnAbrir").onclick = abrir;
+document.getElementById("btnSalvar").onclick = salvar;
+document.getElementById("btnFerramentas").onclick = () => openOverlay(toolsOverlay);
+document.getElementById("btnCodigos").onclick = () => openOverlay(codesOverlay);
+document.getElementById("btnTelaCheia").onclick = toggleFullscreen;
+document.getElementById("btnLint").onclick = () => openOverlay(lintOverlay);
+/* =====================
+   BUTTON WIRING (OVERLAYS: CÓDIGOS + LINT)
+   (Correção: botões internos e toggles)
+===================== */
+(function(){
+  const codesClose = document.getElementById("codesClose");
+  const lintOnBtn = document.getElementById("lintOn");
+  const lintOffBtn = document.getElementById("lintOff");
+  const lintCloseBtn = document.getElementById("lintClose");
+
+  if(codesClose) codesClose.onclick = () => closeOverlay(codesOverlay);
+
+  // Códigos: toggles de destaque
+  const chkHtml = document.getElementById("codeChkHtml");
+  const chkCss  = document.getElementById("codeChkCss");
+  const chkJs   = document.getElementById("codeChkJs");
+  const chkFn   = document.getElementById("codeChkFn");
+  const fnName  = document.getElementById("codeFnName");
+
+  const sync = ()=>{ try{ syncCodeHighlightToggles(); }catch(e){} };
+
+  if(chkHtml) chkHtml.onchange = sync;
+  if(chkCss)  chkCss.onchange  = sync;
+  if(chkJs)   chkJs.onchange   = sync;
+  if(chkFn)   chkFn.onchange   = sync;
+
+  // Atualiza o destaque de Função/Bloco enquanto digita (quando estiver marcado)
+  if(fnName){
+    fnName.addEventListener("input", ()=>{
+      if(chkFn && chkFn.checked){
+        try{ applyCodeHighlightFn(); }catch(e){}
+      }
+    });
+  }
+
+  // Lint: botões
+  if(lintOnBtn)  lintOnBtn.onclick  = () => setLint(true);
+  if(lintOffBtn) lintOffBtn.onclick = () => setLint(false);
+  if(lintCloseBtn) lintCloseBtn.onclick = () => closeOverlay(lintOverlay);
+})();
+
+
+document.getElementById("btnVisualizar").onclick = visualizar;
+document.getElementById("btnFormatar").onclick = formatar;
+document.getElementById("btnIrLinha").onclick = irLinha;
+document.getElementById("btnSubstituir").onclick = () => openOverlay(replaceOverlay);
+
+document.getElementById("btnPrev").onclick = findPrev;
+document.getElementById("btnNext").onclick = findNext;
+document.getElementById("btnLimparPesquisa").onclick = limparPesquisa;
+
+
+
+
+function apagarSelecao(){
+  try{
+    if(cm.somethingSelected()){
+      cm.replaceSelection("", "around");
+      setDirty(true);
+      updatePreview();
+    }
+    cm.focus();
+  }catch(e){}
+}
+
+function limparPesquisa(){
+  try{
+    searchInput.value = "";
+    refreshMatches(false);
+    searchInput.focus();
+  }catch(e){}
+}
+
+/* =====================
+   IMAGENS -> BASE64
+===================== */
+function escapeRegExp(str){
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceImageRefsWithDataUrl(content, fileName, dataUrl){
+  const esc = escapeRegExp(fileName);
+
+  // src/href="...filename" (com ou sem path e querystring)
+  const attrRe = new RegExp('((?:src|href)\\s*=\\s*["\'])([^"\']*?)' + esc + '(?:\\?[^"\']*)?(["\'])', "ig");
+  content = content.replace(attrRe, "$1" + dataUrl + "$3");
+
+  // url(...filename) (com ou sem aspas e querystring)
+  const urlRe = new RegExp('(url\\(\\s*["\']?)([^)"\']*?)' + esc + '(?:\\?[^)"\']*)?(["\']?\\s*\\))', "ig");
+  content = content.replace(urlRe, "$1" + dataUrl + "$3");
+
+  return content;
+}
+
+function imagensParaBase64(){
+  const imgInput = document.getElementById("imgInput");
+  if(imgInput) imgInput.click();
+}
+
+(function setupBase64Importer(){
+  const imgInput = document.getElementById("imgInput");
+  if(!imgInput) return;
+
+  imgInput.addEventListener("change", async () => {
+    try{
+      const files = Array.from(imgInput.files || []);
+      if(!files.length) return;
+
+      let content = cm.getValue();
+
+      for(const file of files){
+        const dataUrl = await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(String(fr.result || ""));
+          fr.onerror = () => reject(fr.error || new Error("Falha ao ler arquivo"));
+          fr.readAsDataURL(file);
+        });
+
+        content = replaceImageRefsWithDataUrl(content, file.name, dataUrl);
+      }
+
+      cm.setValue(content);
+      setDirty(true);
+      updatePreview();
+      cm.focus();
+    }catch(e){}
+    finally{
+      imgInput.value = "";
+    }
+  });
+})();
+
+
+document.getElementById("btnSelectAll").onclick = () => cm.execCommand("selectAll");
+document.getElementById("btnCopiar").onclick = copiar;
+document.getElementById("btnColar").onclick = colar;
+document.getElementById("btnApagarSelecao").onclick = apagarSelecao;
+document.getElementById("btnDesfazer").onclick = () => cm.undo();
+document.getElementById("btnRefazer").onclick = () => cm.redo();
+document.getElementById("btnCompartilhar").onclick = compartilhar;
+document.getElementById("btnFonteMenos").onclick = () => setFont(fontSize - 1);
+document.getElementById("btnFonteMais").onclick = () => setFont(fontSize + 1);
+document.getElementById("btnQuebra").onclick = toggleWrap;
+document.getElementById("btnSelecionarLinha").onclick = () => {
+  // default values
+  const cur = cm.getCursor();
+  document.getElementById("selLineFrom").value = String(cur.line + 1);
+  document.getElementById("selLineTo").value = String(cur.line + 1);
+  openOverlay(selectLineOverlay);
+  setTimeout(()=>{ document.getElementById("selLineFrom").focus(); document.getElementById("selLineFrom").select(); }, 0);
+};
+
+/* =====================
+   MENU BUTTONS
+===================== */
+document.getElementById("mFecharMenu").onclick = () => closeOverlay(menuOverlay);
+document.getElementById("mSelectAll").onclick = () => cm.execCommand("selectAll");
+document.getElementById("mCopiar").onclick = copiar;
+document.getElementById("mColar").onclick = colar;
+document.getElementById("mDesfazer").onclick = () => cm.undo();
+document.getElementById("mRefazer").onclick = () => cm.redo();
+document.getElementById("mCompartilhar").onclick = compartilhar;
+
+document.getElementById("mFonteMenos").onclick = () => setFont(fontSize - 1);
+document.getElementById("mFonteMais").onclick = () => setFont(fontSize + 1);
+document.getElementById("mQuebra").onclick = toggleWrap;
+
+function setFont(size){
+  fontSize = Math.max(10, Math.min(28, size));
+  cm.getWrapperElement().style.fontSize = fontSize + "px";
+  cm.refresh();
+}
+function toggleWrap(){
+  lineWrap = !lineWrap;
+  cm.setOption("lineWrapping", lineWrap);
+  const label = "Quebra: " + (lineWrap ? "ON" : "OFF");
+  document.getElementById("mQuebra").textContent = label;
+  const tb = document.getElementById("btnQuebra");
+  if(tb) tb.textContent = label;
+  cm.refresh();
+}
+
+/* =====================
+   TOOLS
+===================== */
+document.getElementById("tFechar").onclick = () => closeOverlay(toolsOverlay);
+document.getElementById("tOrganizarAbas").onclick = () => {
+  closeOverlay(toolsOverlay);
+  renderTabsOrganizer();
+  openOverlay(tabsOverlay);
+};
+document.getElementById("tOrganizarBarra").onclick = () => {
+  closeOverlay(toolsOverlay);
+  renderToolbarOrganizer();
+  openOverlay(toolbarOverlay);
+};
+document.getElementById("tImgsBase64").onclick = imagensParaBase64;
+document.getElementById("tabsFechar").onclick = () => closeOverlay(tabsOverlay);
+document.getElementById("tbFechar").onclick = () => closeOverlay(toolbarOverlay);
+
+function renderTabsOrganizer(){
+  const el = document.getElementById("tabsList");
+  el.innerHTML = "";
+  const item = document.createElement("div");
+  item.className = "row";
+  item.style.justifyContent = "space-between";
+  item.innerHTML = `
+    <span class="pill" style="flex:1 1 auto">${currentFileName}</span>
+    <button class="btn" style="min-width:64px" disabled>↑</button>
+    <button class="btn" style="min-width:64px" disabled>↓</button>
+  `;
+  el.appendChild(item);
+}
+
+/* =====================
+   TOOLBAR ORGANIZER
+===================== */
+const TOOLBAR_ORDER_KEY = "EDITOR_HTML_TOOLBAR_ORDER_V1";
+
+const TOOLBAR_ITEMS = [
+  {id:"btnMenu", label:"Menu"},
+  {id:"btnNovo", label:"Novo"},
+  {id:"btnAbrir", label:"Abrir"},
+  {id:"btnSalvar", label:"Salvar"},
+  {id:"btnFerramentas", label:"Ferramentas"},
+  {id:"btnCodigos", label:"Códigos"},
+  {id:"btnTelaCheia", label:"Tela Cheia"},
+  {id:"btnLint", label:"Lint"},
+    {id:"btnSelectAll", label:"Selecionar tudo"},
+  {id:"btnCopiar", label:"Copiar"},
+  {id:"btnColar", label:"Colar"},
+  {id:"btnApagarSelecao", label:"Apagar Seleção"},
+  {id:"btnDesfazer", label:"Desfazer"},
+  {id:"btnRefazer", label:"Refazer"},
+  {id:"btnQuebra", label:"Quebra (ON/OFF)"},
+  {id:"btnFonteMenos", label:"Fonte -"},
+  {id:"btnFonteMais", label:"Fonte +"},
+  {id:"btnCompartilhar", label:"Compartilhar"},
+{id:"search", label:"Pesquisar"},
+  {id:"btnLimparPesquisa", label:"Limpar Pesquisa"},
+  {id:"btnPrev", label:"Busca anterior (<)"},
+  {id:"btnNext", label:"Busca próxima (>)"},
+  {id:"searchCount", label:"Contador (0 de 0)"},
+  {id:"fileName", label:"Arquivo (index.html)"},
+  {id:"btnVisualizar", label:"Visualizar"},
+  {id:"btnFormatar", label:"Formatar"},
+  {id:"btnIrLinha", label:"Ir p/ linha"},
+    {id:"btnSelecionarLinha", label:"Selecionar Linha"},
+{id:"btnSubstituir", label:"Substituir"}
+];
+
+function getToolbarElById(id){
+  return document.querySelector(`#toolbar [data-tb-id="${CSS.escape(id)}"]`);
+}
+
+function readToolbarOrder(){
+  try{
+    const raw = localStorage.getItem(TOOLBAR_ORDER_KEY);
+    if(!raw) return null;
+    const arr = JSON.parse(raw);
+    if(Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+  }catch(e){}
+  return null;
+}
+
+function writeToolbarOrder(order){
+  try{ localStorage.setItem(TOOLBAR_ORDER_KEY, JSON.stringify(order)); }catch(e){}
+}
+
+function applyToolbarOrder(order){
+  const toolbar = document.getElementById("toolbar");
+  const seen = new Set();
+
+  order.forEach(id=>{
+    const el = getToolbarElById(id);
+    if(el){
+      toolbar.appendChild(el);
+      seen.add(id);
+    }
+  });
+
+  // Garantir que itens novos/extra (se existirem) continuem acessíveis
+  TOOLBAR_ITEMS.forEach(it=>{
+    if(seen.has(it.id)) return;
+    const el = getToolbarElById(it.id);
+    if(el) toolbar.appendChild(el);
+  });
+}
+
+function renderToolbarOrganizer(){
+  const list = document.getElementById("toolbarList");
+  list.innerHTML = "";
+
+  let order = readToolbarOrder();
+  if(!order) order = TOOLBAR_ITEMS.map(x=>x.id);
+
+  // Sanear: manter apenas itens existentes e adicionar faltantes
+  const existing = new Set(TOOLBAR_ITEMS.map(x=>x.id));
+  order = order.filter(id=>existing.has(id));
+  TOOLBAR_ITEMS.forEach(it=>{ if(!order.includes(it.id)) order.push(it.id); });
+
+  function move(index, dir){
+    const j = index + dir;
+    if(j < 0 || j >= order.length) return;
+    const tmp = order[index];
+    order[index] = order[j];
+    order[j] = tmp;
+    writeToolbarOrder(order);
+    applyToolbarOrder(order);
+    renderToolbarOrganizer();
+  }
+
+  TOOLBAR_ITEMS.forEach((it)=>{
+    // Render na ordem atual
+  });
+
+  order.forEach((id, i)=>{
+    const meta = TOOLBAR_ITEMS.find(x=>x.id === id) || {id, label:id};
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.justifyContent = "space-between";
+    row.innerHTML = `
+      <span class="pill" style="flex:1 1 auto">${meta.label}</span>
+      <button class="btn" data-move="-1" style="min-width:64px">↑</button>
+      <button class="btn" data-move="1" style="min-width:64px">↓</button>
+    `;
+    row.querySelector('[data-move="-1"]').onclick = () => move(i, -1);
+    row.querySelector('[data-move="1"]').onclick = () => move(i, 1);
+    list.appendChild(row);
+  });
+}
+
+function initToolbarOrder(){
+  const order = readToolbarOrder();
+  if(order) applyToolbarOrder(order);
+}
+
+
+/* =====================
+   PREVIEW
+===================== */
+document.getElementById("pvClose").onclick = () => closeOverlay(previewOverlay);
+document.getElementById("pvReload").onclick = updatePreview;
+
+function visualizar(){
+  updatePreview();
+  openOverlay(previewOverlay);
+}
+function updatePreview(){
+  const iframe = document.getElementById("previewFrame");
+  iframe.srcdoc = cm.getValue();
+}
+
+
+function clearSearchMarks(){
+  if(!searchMarks.length) return;
+  searchMarks.forEach(m=>{ try{ m.clear(); }catch(e){} });
+  searchMarks = [];
+}
+
+function applySearchMarks(){
+  clearSearchMarks();
+  if(!matches.length) return;
+  const MAX_MARKS = 2000; // proteção de performance em arquivos muito grandes
+  cm.operation(()=>{
+    for(let i=0;i<matches.length && i<MAX_MARKS;i++){
+      const m = matches[i];
+      const cls = (i === matchIndex) ? "cm-search-hit-current" : "cm-search-hit";
+      const mark = cm.markText(m.from, m.to, {className: cls});
+      searchMarks.push(mark);
+    }
+  });
+}
+
+function scheduleRefreshMatches(jumpToFirst){
+  if(refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(()=>refreshMatches(jumpToFirst), 120);
+}
+
+/* =====================
+   SEARCH
+===================== */
+const searchInput = document.getElementById("search");
+searchInput.addEventListener("input", () => scheduleRefreshMatches(true));
+searchInput.addEventListener("keydown", (e) => {
+  if(e.key === "Enter"){
+    e.preventDefault();
+    if(e.shiftKey) findPrev(); else findNext();
+  }
+});
+
+function refreshMatches(jumpToFirst){
+  const q = searchInput.value.trim();
+  if(q === lastQuery && q !== ""){ updateSearchPill(); return; }
+  lastQuery = q;
+  matches = [];
+  matchIndex = -1;
+
+  if(!q){ clearSearchMarks(); updateSearchPill(); return; }
+
+  const cursor = cm.getSearchCursor(q, {line:0, ch:0});
+  while(cursor.findNext()){
+    matches.push({from: cursor.from(), to: cursor.to()});
+    if(matches.length > 5000) break;
+  }
+
+  if(jumpToFirst && matches.length){
+    matchIndex = 0;
+    const m = matches[0];
+    cm.setSelection(m.from, m.to);
+    cm.scrollIntoView({from: m.from, to: m.to}, 80);
+  }
+  applySearchMarks();
+  updateSearchPill();
+}
+
+function updateSearchPill(){
+  const pill = document.getElementById("searchCount");
+  const total = matches.length;
+  const cur = total ? (matchIndex + 1) : 0;
+  pill.textContent = `${cur} de ${total}`;
+}
+
+function findNext(){
+  const q = searchInput.value.trim();
+  if(!q){ searchInput.focus(); return; }
+  if(!matches.length) refreshMatches(true);
+  if(!matches.length) return;
+
+  matchIndex = (matchIndex + 1) % matches.length;
+  const m = matches[matchIndex];
+  cm.setSelection(m.from, m.to);
+  cm.scrollIntoView({from: m.from, to: m.to}, 80);
+  updateSearchPill();
+applySearchMarks();
+}
+
+function findPrev(){
+  const q = searchInput.value.trim();
+  if(!q){ searchInput.focus(); return; }
+  if(!matches.length) refreshMatches(true);
+  if(!matches.length) return;
+
+  matchIndex = (matchIndex - 1 + matches.length) % matches.length;
+  const m = matches[matchIndex];
+  cm.setSelection(m.from, m.to);
+  cm.scrollIntoView({from: m.from, to: m.to}, 80);
+  updateSearchPill();
+applySearchMarks();
+}
+
+/* =====================
+   REPLACE
+===================== */
+document.getElementById("repClose").onclick = () => closeOverlay(replaceOverlay);
+document.getElementById("repOne").onclick = () => doReplace(false);
+document.getElementById("repAll").onclick = () => doReplace(true);
+
+function doReplace(all){
+  const find = document.getElementById("repFind").value;
+  const withV = document.getElementById("repWith").value;
+  if(!find) return;
+
+  if(all){
+    const text = cm.getValue();
+    const parts = text.split(find);
+    if(parts.length === 1) return;
+    cm.setValue(parts.join(withV));
+    setDirty(true);
+    return;
+  }
+
+  const sel = cm.getSelection();
+  if(sel === find){
+    cm.replaceSelection(withV, "around");
+    setDirty(true);
+    return;
+  }
+
+  const cur = cm.getCursor();
+  const cursor = cm.getSearchCursor(find, cur);
+  if(cursor.findNext()){
+    cm.setSelection(cursor.from(), cursor.to());
+    cm.replaceSelection(withV, "around");
+    setDirty(true);
+  }else{
+    const cursor2 = cm.getSearchCursor(find, {line:0,ch:0});
+    if(cursor2.findNext()){
+      cm.setSelection(cursor2.from(), cursor2.to());
+      cm.replaceSelection(withV, "around");
+      setDirty(true);
+    }
+  }
+}
+
+
+/* =====================
+   SELECT LINE RANGE
+===================== */
+document.getElementById("selLineClose").onclick = () => closeOverlay(selectLineOverlay);
+document.getElementById("selLineOk").onclick = () => {
+  const fromRaw = document.getElementById("selLineFrom").value.trim();
+  const toRaw = document.getElementById("selLineTo").value.trim();
+  let a = parseInt(fromRaw, 10);
+  let b = parseInt(toRaw, 10);
+  if(!Number.isFinite(a)) a = 1;
+  if(!Number.isFinite(b)) b = a;
+  const max = cm.lineCount();
+  a = Math.max(1, Math.min(max, a));
+  b = Math.max(1, Math.min(max, b));
+  const start = Math.min(a, b) - 1;
+  const end = Math.max(a, b) - 1;
+
+  cm.focus();
+  const endCh = cm.getLine(end).length;
+  cm.setSelection({line:start, ch:0}, {line:end, ch:endCh});
+  cm.scrollIntoView({line:start, ch:0}, 80);
+  closeOverlay(selectLineOverlay);
+};
+
+["selLineFrom","selLineTo"].forEach(id=>{
+  const el = document.getElementById(id);
+  el.addEventListener("keydown", (e)=>{
+    if(e.key === "Enter"){
+      e.preventDefault();
+      document.getElementById("selLineOk").click();
+    }
+  });
+});
+
+/* =====================
+   GO TO LINE
+===================== */
+function irLinha(){
+  const v = prompt("Ir para linha:", "1");
+  if(!v) return;
+  const n = Math.max(1, parseInt(v, 10) || 1);
+  const line = Math.min(cm.lineCount(), n) - 1;
+  cm.focus();
+  cm.setCursor({line, ch:0});
+  cm.scrollIntoView({line, ch:0}, 80);
+}
+
+/* =====================
+   FORMAT
+===================== */
+function formatar(){
+  const src = cm.getValue();
+  try{
+    const out = window.html_beautify(src, {
+      indent_size: 2,
+      wrap_line_length: 0,
+      end_with_newline: true,
+      preserve_newlines: true,
+      max_preserve_newlines: 2
+    });
+    cm.setValue(out);
+    setDirty(true);
+  }catch(e){
+    cm.setValue(src.replace(/\r\n/g,"\n"));
+    setDirty(true);
+  }
+}
+
+/* =====================
+   OPEN / SAVE
+===================== */
+const fileInput = document.getElementById("fileInput");
+fileInput.addEventListener("change", async () => {
+  const f = fileInput.files && fileInput.files[0];
+  if(!f) return;
+  const text = await f.text();
+  cm.setValue(text);
+  currentFileName = f.name || "arquivo.html";
+  currentHandle = null;
+  setDirty(false);
+  saveAutosave();
+  fileInput.value = "";
+});
+
+async function abrir(){
+  if(window.showOpenFilePicker){
+    try{
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{ description: "Arquivos", accept: {
+          "text/html":[".html",".htm"],
+          "text/plain":[".txt",".css",".js",".json",".md"]
+        }}]
+      });
+      if(!handle) return;
+      currentHandle = handle;
+      const file = await handle.getFile();
+      const text = await file.text();
+      cm.setValue(text);
+      currentFileName = file.name || "arquivo.html";
+      setDirty(false);
+      saveAutosave();
+      return;
+    }catch(err){}
+  }
+  fileInput.click();
+}
+
+async function salvar(){
+  const data = cm.getValue();
+
+  // 1) write to existing handle
+  if(currentHandle && currentHandle.createWritable){
+    try{
+      const writable = await currentHandle.createWritable();
+      await writable.write(data);
+      await writable.close();
+      setDirty(false);
+      saveAutosave();
+      return;
+    }catch(err){}
+  }
+
+  // 2) save as
+  if(window.showSaveFilePicker){
+    try{
+      const handle = await window.showSaveFilePicker({
+        suggestedName: currentFileName || "index.html",
+        types: [
+          { description: "HTML", accept: {"text/html":[".html",".htm"]} },
+          { description: "Texto", accept: {"text/plain":[".txt"]} }
+        ]
+      });
+      if(handle){
+        currentHandle = handle;
+        const writable = await handle.createWritable();
+        await writable.write(data);
+        await writable.close();
+        const file = await handle.getFile();
+        currentFileName = file.name || currentFileName;
+        setDirty(false);
+        saveAutosave();
+        return;
+      }
+    }catch(err){}
+  }
+
+  // 3) fallback download
+  const blob = new Blob([data], {type:"text/plain;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = currentFileName || "index.html";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setDirty(false);
+  saveAutosave();
+}
+
+function novo(){
+  if(isDirty){
+    const ok = confirm("Tem alterações não salvas. Criar novo mesmo assim?");
+    if(!ok) return;
+  }
+  cm.setValue("");
+  currentHandle = null;
+  currentFileName = "index.html";
+  setDirty(false);
+  saveAutosave();
+}
+
+/* =====================
+   CLIPBOARD / SHARE
+===================== */
+async function copiar(){
+  try{
+    const text = cm.getSelection() || cm.getValue();
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = cm.getSelection() || cm.getValue();
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+}
+
+async function colar(){
+  try{
+    const text = await navigator.clipboard.readText();
+    if(text != null) cm.replaceSelection(text, "around");
+  }catch(e){
+    alert("Colar: o navegador bloqueou. Use colar do sistema ou ative permissões de área de transferência.");
+  }
+}
+
+async function compartilhar(){
+  try{
+    const data = cm.getValue();
+    const file = new File([data], currentFileName || "index.html", {type:"text/plain"});
+    if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+      await navigator.share({files:[file], title: currentFileName});
+      return;
+    }
+  }catch(e){}
+  alert("Compartilhar não disponível neste navegador.");
+}
+
+/* =====================
+   AUTOSAVE
+===================== */
+let autosaveTimer = null;
+const AUTOSAVE_KEY = "EDITOR_HTML_ULTRAVIEW_AUTOSAVE_V1";
+
+function scheduleAutosave(){
+  if(autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(saveAutosave, 700);
+}
+function saveAutosave(){
+  try{
+    const payload = { name: currentFileName, value: cm.getValue(), ts: Date.now() };
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
+  }catch(e){}
+}
+function loadAutosave(){
+  try{
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if(!raw) return;
+    const payload = JSON.parse(raw);
+    if(payload && typeof payload.value === "string"){
+      cm.setValue(payload.value);
+      currentFileName = payload.name || currentFileName;
+      setDirty(false);
+      updateFilePill();
+    }
+  }catch(e){}
+}
+
+/* Garantia extra: evita perder trabalho se fechar/atualizar antes do debounce do autosave */
+(function setupAutosaveGuards(){
+  const flush = () => { try{ saveAutosave(); }catch(e){} };
+  window.addEventListener("beforeunload", flush);
+  window.addEventListener("pagehide", flush);
+  document.addEventListener("visibilitychange", () => {
+    if(document.visibilityState === "hidden") flush();
+  });
+})();
+
+
+/* =====================
+   INIT
+===================== */
+updateFilePill();
+setFont(fontSize);
+document.getElementById("mQuebra").textContent = "Quebra: " + (lineWrap ? "ON" : "OFF");
+const _tbQuebra = document.getElementById("btnQuebra"); if(_tbQuebra) _tbQuebra.textContent = "Quebra: " + (lineWrap ? "ON" : "OFF");
+loadAutosave();
+initToolbarOrder();
+setLint(false);
+
+/* Shortcuts */
+document.addEventListener("keydown", (e) => {
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s"){
+    e.preventDefault(); salvar();
+  }
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f"){
+    e.preventDefault(); searchInput.focus(); searchInput.select();
+  }
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h"){
+    e.preventDefault(); openOverlay(replaceOverlay); document.getElementById("repFind").focus();
+  }
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g"){
+    e.preventDefault(); irLinha();
+  }
+});
+</script>
+
+<input type="file" id="imgInput" accept="image/*" multiple style="display:none">
+<script>
+
+  if ("serviceWorker" in navigator) {
+
+    window.addEventListener("load", () => {
+
+      navigator.serviceWorker.register("/sw.js");
+
+    });
+
+  }
+
+</script>
+  </body>
+</html>
