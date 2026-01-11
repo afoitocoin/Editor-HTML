@@ -1,12 +1,10 @@
-const CACHE_NAME = "editor-html-v1";
+const CACHE_NAME = "editor-html-v2";
 
 const CORE_ASSETS = [
 
   "/",
 
   "/index.html",
-
-  "/manifest.webmanifest",
 
   "/sw.js",
 
