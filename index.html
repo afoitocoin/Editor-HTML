@@ -186,7 +186,8 @@ input[type="checkbox"], input[type="radio"]{
     <button class="btn" id="btnFerramentas" data-tb-id="btnFerramentas">Ferramentas</button>
 
 
-    <button class="btn" id="btnCodigos" data-tb-id="btnCodigos">Códigos</button>
+        <button class="btn" id="btnBackup" data-tb-id="btnBackup">Backup</button>
+<button class="btn" id="btnCodigos" data-tb-id="btnCodigos">Códigos</button>
     <button class="btn" id="btnTelaCheia" data-tb-id="btnTelaCheia">Tela Cheia</button>
     <button class="btn" id="btnLint" data-tb-id="btnLint">Lint</button>
 
@@ -227,24 +228,13 @@ input[type="checkbox"], input[type="radio"]{
 <div class="overlay" id="menuOverlay" aria-hidden="true">
   <div class="box">
     <h3>Menu</h3>
-    <div class="row">
-      <button class="btn" id="mSelectAll">Selecionar tudo</button>
-      <button class="btn" id="mCopiar">Copiar</button>
-      <button class="btn" id="mColar">Colar</button>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <button class="btn" id="mDesfazer">Desfazer</button>
-      <button class="btn" id="mRefazer">Refazer</button>
+    <div class="small" style="margin-bottom:10px">
+      Toque no botão para usar. Use ↑ e ↓ para alterar a posição de cada item dentro do Menu.
     </div>
     <div class="hr"></div>
-    <div class="row">
-      <button class="btn" id="mQuebra">Quebra: OFF</button>
-      <button class="btn" id="mFonteMenos">Fonte -</button>
-      <button class="btn" id="mFonteMais">Fonte +</button>
-    </div>
+    <div id="menuList"></div>
     <div class="hr"></div>
     <div class="row">
-      <button class="btn" id="mCompartilhar">Compartilhar</button>
       <button class="btn" id="mFecharMenu">Fechar</button>
     </div>
     <div class="small" style="margin-top:10px">
@@ -252,6 +242,25 @@ input[type="checkbox"], input[type="radio"]{
     </div>
   </div>
 </div>
+</div>
+
+<!-- BACKUP overlay -->
+<div class="overlay" id="backupOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Backup</h3>
+    <div class="small" style="margin-bottom:10px">
+      Exporte ou importe a posição dos botões (Barra Superior e Menu).
+    </div>
+    <div class="hr"></div>
+    <div class="row" style="gap:10px; flex-wrap:wrap">
+      <button class="btn" id="bExportJson">Exportar.json</button>
+      <button class="btn" id="bImportJson">Importar.json</button>
+      <button class="btn" id="bFecharBackup">Fechar</button>
+    </div>
+  </div>
+</div>
+
+
 
 <!-- FERRAMENTAS overlay -->
 <div class="overlay" id="toolsOverlay" aria-hidden="true">
@@ -535,6 +544,32 @@ async function toggleFullscreen(){
   }catch(e){}
 }
 
+// Sempre tentar abrir em Tela Cheia (quando o navegador permitir)
+let __autoFsTried = false;
+async function tryEnterFullscreenOnce(){
+  if(__autoFsTried) return;
+  __autoFsTried = true;
+  try{
+    if(document.fullscreenElement) return;
+    const el = document.documentElement;
+    if(el.requestFullscreen) await el.requestFullscreen({navigationUI:"hide"});
+    // tentar travar orientação (se disponível)
+    try{
+      if(screen.orientation && screen.orientation.lock) await screen.orientation.lock("portrait");
+    }catch(e){}
+  }catch(e){}
+}
+
+window.addEventListener("load", ()=>{
+  // tentativa imediata (pode falhar sem gesto do usuário)
+  setTimeout(()=>{ tryEnterFullscreenOnce(); }, 80);
+});
+
+// fallback: primeira interação do usuário
+document.addEventListener("pointerdown", ()=>{
+  if(!document.fullscreenElement) tryEnterFullscreenOnce();
+}, {once:true, passive:true});
+
 /* =====================
    CODE HIGHLIGHTER
 ===================== */
@@ -751,11 +786,12 @@ function setLint(on){
 /* =====================
    BUTTON WIRING (TOP)
 ===================== */
-document.getElementById("btnMenu").onclick = () => openOverlay(menuOverlay);
+document.getElementById("btnMenu").onclick = () => { renderMenu(); openOverlay(menuOverlay); };
 document.getElementById("btnNovo").onclick = novo;
 document.getElementById("btnAbrir").onclick = abrir;
 document.getElementById("btnSalvar").onclick = salvar;
 document.getElementById("btnFerramentas").onclick = () => openOverlay(toolsOverlay);
+document.getElementById("btnBackup").onclick = backupButtonsPosition;
 document.getElementById("btnCodigos").onclick = () => openOverlay(codesOverlay);
 document.getElementById("btnTelaCheia").onclick = toggleFullscreen;
 document.getElementById("btnLint").onclick = () => openOverlay(lintOverlay);
@@ -912,19 +948,185 @@ document.getElementById("btnSelecionarLinha").onclick = () => {
 };
 
 /* =====================
-   MENU BUTTONS
+   MENU
 ===================== */
-document.getElementById("mFecharMenu").onclick = () => closeOverlay(menuOverlay);
-document.getElementById("mSelectAll").onclick = () => cm.execCommand("selectAll");
-document.getElementById("mCopiar").onclick = copiar;
-document.getElementById("mColar").onclick = colar;
-document.getElementById("mDesfazer").onclick = () => cm.undo();
-document.getElementById("mRefazer").onclick = () => cm.redo();
-document.getElementById("mCompartilhar").onclick = compartilhar;
+const MENU_ORDER_KEY = "EDITOR_HTML_MENU_ORDER_V1";
 
-document.getElementById("mFonteMenos").onclick = () => setFont(fontSize - 1);
-document.getElementById("mFonteMais").onclick = () => setFont(fontSize + 1);
-document.getElementById("mQuebra").onclick = toggleWrap;
+function isToolbarBtnId(id){
+  // Apenas botões (class .btn) da barra superior
+  const el = document.getElementById(id);
+  return !!(el && el.classList && el.classList.contains("btn") && el.closest("#toolbar"));
+}
+
+function getMenuItems(){
+  // Todos os botões da barra superior (exceto o próprio Menu)
+  return TOOLBAR_ITEMS
+    .map(x => x.id)
+    .filter(id => id !== "btnMenu")
+    .filter(id => isToolbarBtnId(id));
+}
+
+function readMenuOrder(){
+  try{
+    const raw = localStorage.getItem(MENU_ORDER_KEY);
+    if(!raw) return null;
+    const arr = JSON.parse(raw);
+    if(Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+  }catch(e){}
+  return null;
+}
+
+function writeMenuOrder(order){
+  try{ localStorage.setItem(MENU_ORDER_KEY, JSON.stringify(order)); }catch(e){}
+}
+
+function renderMenu(){
+  const list = document.getElementById("menuList");
+  if(!list) return;
+  list.innerHTML = "";
+
+  const items = getMenuItems();
+  if(!items.length){
+    list.innerHTML = '<div class="small">Nenhum botão encontrado na barra superior.</div>';
+    return;
+  }
+
+  // Order: menu order > toolbar order > default TOOLBAR_ITEMS
+  let order = readMenuOrder();
+
+  if(!order){
+    const tbOrder = readToolbarOrder();
+    order = (tbOrder && tbOrder.length) ? tbOrder.slice() : TOOLBAR_ITEMS.map(x=>x.id);
+  }
+
+  // Sanear: manter apenas itens existentes e adicionar faltantes
+  const existing = new Set(items);
+  order = order.filter(id=>existing.has(id));
+  items.forEach(id=>{ if(!order.includes(id)) order.push(id); });
+
+  function move(index, dir){
+    const j = index + dir;
+    if(j < 0 || j >= order.length) return;
+    const tmp = order[index];
+    order[index] = order[j];
+    order[j] = tmp;
+    writeMenuOrder(order);
+    renderMenu();
+  }
+
+  order.forEach((id, i)=>{
+    const meta = TOOLBAR_ITEMS.find(x=>x.id === id) || {id, label:id};
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.justifyContent = "space-between";
+    row.innerHTML = `
+      <button class="btn" data-act="1" style="flex:1 1 auto">${meta.label}</button>
+      <button class="btn" data-move="-1" style="min-width:64px">↑</button>
+      <button class="btn" data-move="1" style="min-width:64px">↓</button>
+    `;
+
+    // Ação: dispara o clique do botão real da barra superior
+    row.querySelector('[data-act="1"]').onclick = () => {
+      try{
+        const real = document.getElementById(id);
+        if(real) real.click();
+      }catch(e){}
+    };
+
+    row.querySelector('[data-move="-1"]').onclick = () => move(i, -1);
+    row.querySelector('[data-move="1"]').onclick = () => move(i, 1);
+    list.appendChild(row);
+  });
+}
+
+document.getElementById("mFecharMenu").onclick = () => closeOverlay(menuOverlay);
+
+/* =====================
+   BACKUP
+===================== */
+const BUTTONS_BACKUP_KEY = "EDITOR_HTML_BUTTONS_BACKUP_V1";
+
+function getCurrentToolbarButtonOrder(){
+  const btns = Array.from(document.querySelectorAll('#toolbar .btn[data-tb-id]'));
+  return btns.map(b => b.getAttribute("data-tb-id")).filter(Boolean);
+}
+
+function backupButtonsPosition(){
+  // Agora abre o pop-up de backup (exportar/importar)
+  openOverlay(backupOverlay);
+}
+
+function exportButtonsJson(){
+  try{
+    const payload = {
+      version: "BUTTONS_BACKUP_V1",
+      ts: Date.now(),
+      toolbarOrder: getCurrentToolbarButtonOrder(),
+      menuOrder: readMenuOrder() || null
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Exportar.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 500);
+  }catch(e){
+    alert("Falha ao exportar.");
+  }
+}
+
+function importButtonsJson(){
+  try{
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      if(!file) return;
+
+      try{
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        const tOrder = Array.isArray(data.toolbarOrder) ? data.toolbarOrder : null;
+        const mOrder = Array.isArray(data.menuOrder) ? data.menuOrder : null;
+
+        if(tOrder){
+          saveToolbarOrder(tOrder);
+          applyToolbarOrder(tOrder);
+        }
+        if(mOrder){
+          saveMenuOrder(mOrder);
+          // reconstruir o menu imediatamente
+          buildMenuList();
+        }
+
+        // Atualizar listas de organização (Ferramentas -> Barra Superior / Menu)
+        try{ buildToolsToolbarList(); }catch(e){}
+        try{ buildToolsMenuList(); }catch(e){}
+
+        alert("Importação concluída!");
+        closeOverlay(backupOverlay);
+      }catch(e){
+        alert("Arquivo inválido ou corrompido.");
+      }
+    };
+    input.click();
+  }catch(e){
+    alert("Falha ao importar.");
+  }
+}
+
+document.getElementById("bExportJson").onclick = exportButtonsJson;
+document.getElementById("bImportJson").onclick = importButtonsJson;
+document.getElementById("bFecharBackup").onclick = () => closeOverlay(backupOverlay);
+
+
 
 function setFont(size){
   fontSize = Math.max(10, Math.min(28, size));
@@ -935,7 +1137,6 @@ function toggleWrap(){
   lineWrap = !lineWrap;
   cm.setOption("lineWrapping", lineWrap);
   const label = "Quebra: " + (lineWrap ? "ON" : "OFF");
-  document.getElementById("mQuebra").textContent = label;
   const tb = document.getElementById("btnQuebra");
   if(tb) tb.textContent = label;
   cm.refresh();
@@ -984,7 +1185,8 @@ const TOOLBAR_ITEMS = [
   {id:"btnAbrir", label:"Abrir"},
   {id:"btnSalvar", label:"Salvar"},
   {id:"btnFerramentas", label:"Ferramentas"},
-  {id:"btnCodigos", label:"Códigos"},
+    {id:"btnBackup", label:"Backup"},
+{id:"btnCodigos", label:"Códigos"},
   {id:"btnTelaCheia", label:"Tela Cheia"},
   {id:"btnLint", label:"Lint"},
     {id:"btnSelectAll", label:"Selecionar tudo"},
@@ -1512,7 +1714,6 @@ function loadAutosave(){
 ===================== */
 updateFilePill();
 setFont(fontSize);
-document.getElementById("mQuebra").textContent = "Quebra: " + (lineWrap ? "ON" : "OFF");
 const _tbQuebra = document.getElementById("btnQuebra"); if(_tbQuebra) _tbQuebra.textContent = "Quebra: " + (lineWrap ? "ON" : "OFF");
 loadAutosave();
 initToolbarOrder();
