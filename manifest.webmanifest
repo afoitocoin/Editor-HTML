@@ -8,9 +8,9 @@
 
   "short_name": "Editor",
 
-  "start_url": "./?source=pwa",
+  "start_url": "/?source=pwa",
 
-  "scope": "./",
+  "scope": "/",
 
   "display": "fullscreen",
 
