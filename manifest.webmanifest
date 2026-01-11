@@ -16,7 +16,7 @@
 
   "background_color": "#000000",
 
-  "theme_color": "#00ff55",
+  "theme_color": "#0A0A0A",
 
   "description": "Editor HTML com CodeMirror, salvar/abrir, preview e ferramentas.",
 
