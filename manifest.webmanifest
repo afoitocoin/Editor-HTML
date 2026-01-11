@@ -26,9 +26,9 @@
 
   "screenshots": [
 
-    { "src": "/screenshots/screenshot-1.png", "sizes": "1080x1920", "type": "image/png" },
+    { "src": "screenshots/screenshot-1.png", "sizes": "1080x1920", "type": "image/png" },
 
-    { "src": "/screenshots/screenshot-2.png", "sizes": "1080x1920", "type": "image/png" }
+    { "src": "screenshots/screenshot-2.png", "sizes": "1080x1920", "type": "image/png" }
 
   ]
 
