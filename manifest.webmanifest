@@ -1,5 +1,9 @@
 {
 
+  "id": "editor-html",
+
+  "orientation": "any",
+
   "name": "Editor HTML",
 
   "short_name": "Editor",
@@ -26,9 +30,9 @@
 
   "screenshots": [
 
-    { "src": "screenshots/screenshot-1.png", "sizes": "1080x1920", "type": "image/png" },
+    { "src": "screenshots/screenshot-1.png", "sizes": "1920x1080", "type": "image/png" },
 
-    { "src": "screenshots/screenshot-2.png", "sizes": "1080x1920", "type": "image/png" }
+    { "src": "screenshots/screenshot-2.png", "sizes": "1920x1080", "type": "image/png" }
 
   ]
 
