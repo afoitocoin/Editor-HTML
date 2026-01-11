@@ -12,7 +12,7 @@
 
   "scope": "/",
 
-  "display": "fullscreen",
+  "display": "standalone",
 
   "background_color": "#000000",
 
