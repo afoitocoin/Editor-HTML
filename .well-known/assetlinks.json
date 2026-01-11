@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.afoito.app_88888uw77wwxxw77q88888.twa",
+        "sha256_cert_fingerprints": ["80:17:D7:D8:10:76:BF:57:A3:D8:D9:D4:16:5A:15:0F:B9:DB:82:D2:8A:0F:53:B7:A7:E4:CE:9D:C9:3B:9A:3C"]
+      }
+    }]
