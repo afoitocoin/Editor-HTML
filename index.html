@@ -171,6 +171,10 @@ input[type="checkbox"], input[type="radio"]{
 /* Search highlights */
 .cm-search-hit{ background: rgba(255,255,0,.18); border-bottom: 1px solid rgba(255,255,0,.45); }
 .cm-search-hit-current{ background: rgba(255,255,0,.35); border-bottom: 1px solid rgba(255,255,0,.9); }
+
+/* Select-all visual flash */
+.cm-selectall-flash{ background: rgba(0,255,85,.22); }
+
 .hidden{display:none !important}
 </style>
 </head>
@@ -503,6 +507,11 @@ let lintEnabled = false;
 const SECOND_TOOLBAR_KEY = "EDITOR_HTML_SECOND_TOOLBAR_VISIBLE_V1";
 let secondToolbarVisible = false;
 
+// Contexto da barra ativa (1 = superior, 2 = segunda barra)
+let activeToolbarId = 1;
+function setActiveToolbar(id){ activeToolbarId = (id === 2) ? 2 : 1; }
+function getActiveToolbar(){ return activeToolbarId; }
+
 
 /* =====================
    TABS (ABAS)
@@ -562,6 +571,7 @@ function ensureTabButtons(){
     btn.className = "btn tab-btn";
     btn.textContent = "Aba 1";
     btn.setAttribute("data-tab-id","tab1");
+    btn.setAttribute("data-tb-id","tab:tab1");
     btn.onclick = ()=>switchTab("tab1");
     // inserir após o botão "Add Aba" (ou após Ferramentas se não existir)
     const addBtn = document.getElementById("btnAddAba");
@@ -584,6 +594,7 @@ function syncTabButtonsUI(){
       b = document.createElement("button");
       b.className = "btn tab-btn";
       b.setAttribute("data-tab-id", t.id);
+      b.setAttribute("data-tb-id","tab:" + t.id);
       b.onclick = ()=>switchTab(t.id);
       // inserir após o último botão de aba existente (ou após Add Aba)
       const all = Array.from(document.querySelectorAll('#toolbar .tab-btn[data-tab-id]'));
@@ -592,6 +603,7 @@ function syncTabButtonsUI(){
       else document.getElementById("toolbar").appendChild(b);
     }
     b.textContent = t.label;
+    if(!b.getAttribute("data-tb-id")) b.setAttribute("data-tb-id","tab:" + t.id);
     if(t.id === activeTabId) b.style.borderStyle = "solid";
     else b.style.borderStyle = "";
   });
@@ -807,6 +819,14 @@ function openRenameTabPopup(){
 [menuOverlay, toolsOverlay, codesOverlay, lintOverlay, tabsOverlay, toolbarOverlay, selectLineOverlay, replaceOverlay, previewOverlay, deleteTabOverlay, renameTabOverlay].forEach(ov => {
   ov.addEventListener("click", (e)=>{ if(e.target === ov) closeOverlay(ov); });
 });
+
+// Detectar qual barra o usuário está usando (para organizar independentemente)
+(function setupToolbarActiveContext(){
+  const tb1 = document.getElementById("toolbar");
+  const tb2 = document.getElementById("toolbar2");
+  if(tb1) tb1.addEventListener("pointerdown", ()=>setActiveToolbar(1), {passive:true});
+  if(tb2) tb2.addEventListener("pointerdown", ()=>setActiveToolbar(2), {passive:true});
+})();
 
 
 /* =====================
@@ -1069,7 +1089,13 @@ function setLint(on){
 /* =====================
    BUTTON WIRING (TOP)
 ===================== */
-document.getElementById("btnMenu").onclick = () => { renderMenu(); openOverlay(menuOverlay); };
+
+function openToolbarOrganizerFrom(toolbarId){
+  setActiveToolbar(toolbarId);
+  try{ renderToolbarOrganizer(); }catch(e){}
+  try{ openOverlay(toolbarOverlay); }catch(e){}
+}
+document.getElementById("btnMenu").onclick = () => { try{ openToolbarOrganizerFrom(1); }catch(e){} };
 document.getElementById("btnNovo").onclick = novo;
 document.getElementById("btnAbrir").onclick = abrir;
 document.getElementById("btnSalvar").onclick = salvar;
@@ -1167,6 +1193,25 @@ function contarChars(){
 }
 
 
+function selectAllWithFeedback(){
+  try{
+    cm.focus();
+    const lastLine = Math.max(0, cm.lineCount() - 1);
+    const lastCh = cm.getLine(lastLine).length;
+    cm.setSelection({line:0, ch:0}, {line:lastLine, ch:lastCh});
+
+    // Retorno visual extra (flash rápido) para confirmar
+    let flashMark = null;
+    try{
+      flashMark = cm.markText({line:0,ch:0}, {line:lastLine,ch:lastCh}, {className:"cm-selectall-flash"});
+      setTimeout(()=>{ try{ if(flashMark) flashMark.clear(); }catch(e){} }, 260);
+    }catch(e){}
+
+    cm.scrollIntoView({line:0, ch:0}, 40);
+  }catch(e){}
+}
+
+
 /* =====================
    IMAGENS -> BASE64
 ===================== */
@@ -1227,7 +1272,7 @@ function imagensParaBase64(){
 })();
 
 
-document.getElementById("btnSelectAll").onclick = () => cm.execCommand("selectAll");
+document.getElementById("btnSelectAll").onclick = selectAllWithFeedback;
 document.getElementById("btnCopiar").onclick = copiar;
 document.getElementById("btnColar").onclick = colar;
 document.getElementById("btnApagarSelecao").onclick = apagarSelecao;
@@ -1249,25 +1294,29 @@ document.getElementById("btnSelecionarLinha").onclick = () => {
 /* =====================
    MENU
 ===================== */
-const MENU_ORDER_KEY = "EDITOR_HTML_MENU_ORDER_V1";
+const MENU_ORDER_KEY_1 = "EDITOR_HTML_MENU_ORDER_V1";
+const MENU_ORDER_KEY_2 = "EDITOR_HTML_MENU2_ORDER_V1";
+function menuOrderKey(toolbarId){ return (toolbarId === 2) ? MENU_ORDER_KEY_2 : MENU_ORDER_KEY_1; }
 
-function isToolbarBtnId(id){
-  // Apenas botões (class .btn) da barra superior
-  const el = document.getElementById(id);
-  return !!(el && el.classList && el.classList.contains("btn") && el.closest("#toolbar"));
+function isToolbarBtnId(id, toolbarId){
+  // Qualquer item da barra (botões, input de pesquisa, pílulas etc.)
+  const root = (toolbarId === 2) ? document.getElementById("toolbar2") : document.getElementById("toolbar");
+  if(!root) return false;
+  const el = root.querySelector(`[data-tb-id="${CSS.escape(id)}"]`);
+  return !!el;
 }
 
-function getMenuItems(){
-  // Todos os botões da barra superior (exceto o próprio Menu)
+function getMenuItems(toolbarId){
+  // Todos os botões da barra (exceto o próprio Menu)
   return TOOLBAR_ITEMS
     .map(x => x.id)
     .filter(id => id !== "btnMenu")
-    .filter(id => isToolbarBtnId(id));
+    .filter(id => isToolbarBtnId(id, toolbarId));
 }
 
-function readMenuOrder(){
+function readMenuOrder(toolbarId){
   try{
-    const raw = localStorage.getItem(MENU_ORDER_KEY);
+    const raw = localStorage.getItem(menuOrderKey(toolbarId));
     if(!raw) return null;
     const arr = JSON.parse(raw);
     if(Array.isArray(arr) && arr.length) return arr.filter(Boolean);
@@ -1275,26 +1324,26 @@ function readMenuOrder(){
   return null;
 }
 
-function writeMenuOrder(order){
-  try{ localStorage.setItem(MENU_ORDER_KEY, JSON.stringify(order)); }catch(e){}
+function writeMenuOrder(toolbarId, order){
+  try{ localStorage.setItem(menuOrderKey(toolbarId), JSON.stringify(order)); }catch(e){}
 }
 
-function renderMenu(){
+function renderMenu(toolbarId){
   const list = document.getElementById("menuList");
   if(!list) return;
   list.innerHTML = "";
 
-  const items = getMenuItems();
+  const items = getMenuItems(toolbarId);
   if(!items.length){
     list.innerHTML = '<div class="small">Nenhum botão encontrado na barra superior.</div>';
     return;
   }
 
   // Order: menu order > toolbar order > default TOOLBAR_ITEMS
-  let order = readMenuOrder();
+  let order = readMenuOrder(toolbarId);
 
   if(!order){
-    const tbOrder = readToolbarOrder();
+    const tbOrder = readToolbarOrder(toolbarId);
     order = (tbOrder && tbOrder.length) ? tbOrder.slice() : TOOLBAR_ITEMS.map(x=>x.id);
   }
 
@@ -1309,8 +1358,8 @@ function renderMenu(){
     const tmp = order[index];
     order[index] = order[j];
     order[j] = tmp;
-    writeMenuOrder(order);
-    renderMenu();
+    writeMenuOrder(toolbarId, order);
+    renderMenu(getActiveToolbar());
   }
 
   order.forEach((id, i)=>{
@@ -1328,7 +1377,15 @@ function renderMenu(){
     row.querySelector('[data-act="1"]').onclick = () => {
       try{
         const real = document.getElementById(id);
-        if(real) real.click();
+        if(!real) return;
+        const tag = (real.tagName || "").toLowerCase();
+        if(tag === "input"){
+          real.focus();
+          try{ real.select && real.select(); }catch(err){}
+          return;
+        }
+        // spans/pills e botões
+        if(typeof real.click === "function") real.click();
       }catch(e){}
     };
 
@@ -1345,8 +1402,9 @@ document.getElementById("mFecharMenu").onclick = () => closeOverlay(menuOverlay)
 ===================== */
 const BUTTONS_BACKUP_KEY = "EDITOR_HTML_BUTTONS_BACKUP_V1";
 
-function getCurrentToolbarButtonOrder(){
-  const btns = Array.from(document.querySelectorAll('#toolbar .btn[data-tb-id]'));
+function getCurrentToolbarButtonOrder(toolbarId){
+  const root = (toolbarId === 2) ? "#toolbar2" : "#toolbar";
+  const btns = Array.from(document.querySelectorAll(`${root} [data-tb-id]`));
   return btns.map(b => b.getAttribute("data-tb-id")).filter(Boolean);
 }
 
@@ -1360,8 +1418,10 @@ function exportButtonsJson(){
     const payload = {
       version: "BUTTONS_BACKUP_V1",
       ts: Date.now(),
-      toolbarOrder: getCurrentToolbarButtonOrder(),
-      menuOrder: readMenuOrder() || null
+      toolbarOrder: getCurrentToolbarButtonOrder(1),
+      toolbar2Order: getCurrentToolbarButtonOrder(2),
+      menuOrder: readMenuOrder(1) || null,
+      menu2Order: readMenuOrder(2) || null
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
@@ -1393,21 +1453,29 @@ function importButtonsJson(){
         const data = JSON.parse(text);
 
         const tOrder = Array.isArray(data.toolbarOrder) ? data.toolbarOrder : null;
+        const t2Order = Array.isArray(data.toolbar2Order) ? data.toolbar2Order : null;
         const mOrder = Array.isArray(data.menuOrder) ? data.menuOrder : null;
+        const m2Order = Array.isArray(data.menu2Order) ? data.menu2Order : null;
 
         if(tOrder){
-          saveToolbarOrder(tOrder);
-          applyToolbarOrder(tOrder);
+          writeToolbarOrder(1, tOrder);
+          applyToolbarOrder(tOrder, 1);
+        }
+        if(t2Order){
+          writeToolbarOrder(2, t2Order);
+          applyToolbarOrder(t2Order, 2);
         }
         if(mOrder){
-          saveMenuOrder(mOrder);
-          // reconstruir o menu imediatamente
-          buildMenuList();
+          writeMenuOrder(1, mOrder);
+        }
+        if(m2Order){
+          writeMenuOrder(2, m2Order);
         }
 
-        // Atualizar listas de organização (Ferramentas -> Barra Superior / Menu)
-        try{ buildToolsToolbarList(); }catch(e){}
-        try{ buildToolsMenuList(); }catch(e){}
+        // Atualizar listas/overlays (se estiverem abertas)
+        try{ renderToolbarOrganizer(); }catch(e){}
+        try{ renderMenu(getActiveToolbar()); }catch(e){}
+
 
         alert("Importação concluída!");
         closeOverlay(backupOverlay);
@@ -1455,8 +1523,10 @@ function getEditorConfigPayload(){
         }))
       },
       layout: {
-        toolbarOrder: getCurrentToolbarButtonOrder(),
-        menuOrder: readMenuOrder() || null
+        toolbarOrder: getCurrentToolbarButtonOrder(1),
+        toolbar2Order: getCurrentToolbarButtonOrder(2),
+        menuOrder: readMenuOrder(1) || null,
+        menu2Order: readMenuOrder(2) || null
       }
     };
   }catch(e){
@@ -1522,14 +1592,23 @@ function importEditorConfigJson(){
 
         // layout
         const tOrder = data && data.layout && Array.isArray(data.layout.toolbarOrder) ? data.layout.toolbarOrder : null;
+        const t2Order = data && data.layout && Array.isArray(data.layout.toolbar2Order) ? data.layout.toolbar2Order : null;
         const mOrder = data && data.layout && Array.isArray(data.layout.menuOrder) ? data.layout.menuOrder : null;
+        const m2Order = data && data.layout && Array.isArray(data.layout.menu2Order) ? data.layout.menu2Order : null;
 
         if(tOrder){
-          writeToolbarOrder(tOrder);
-          applyToolbarOrder(tOrder);
+          writeToolbarOrder(1, tOrder);
+          applyToolbarOrder(tOrder, 1);
+        }
+        if(t2Order){
+          writeToolbarOrder(2, t2Order);
+          applyToolbarOrder(t2Order, 2);
         }
         if(mOrder){
-          writeMenuOrder(mOrder);
+          writeMenuOrder(1, mOrder);
+        }
+        if(m2Order){
+          writeMenuOrder(2, m2Order);
         }
 
         // ui
@@ -1552,7 +1631,7 @@ function importEditorConfigJson(){
         // refresh UI pieces
         try{ syncTabButtonsUI(); }catch(e){}
         try{ syncToolsTabsUI(); }catch(e){}
-        try{ renderMenu(); }catch(e){}
+        try{ renderMenu(getActiveToolbar()); }catch(e){}
         try{ renderToolbarOrganizer(); }catch(e){}
 
         saveAutosave();
@@ -1613,8 +1692,22 @@ function makeProxyForElement(el){
       b.onclick = () => { try{ if(tid) switchTab(tid); }catch(e){} };
       return b;
     }
+    const tbid = el.getAttribute("data-tb-id");
+    if(tbid) b.setAttribute("data-tb-id", tbid);
+
     const id = el.id;
-    b.onclick = () => { try{ if(id) document.getElementById(id).click(); }catch(e){} };
+    b.onclick = () => {
+      try{
+        // Menu precisa ser independente por barra
+        if(id === "btnMenu"){
+          // Mesma função do "Barra Superior" dentro de Ferramentas
+          try{ openToolbarOrganizerFrom(2); }catch(e){}
+          return;
+        }
+        setActiveToolbar(2);
+        if(id) document.getElementById(id).click();
+      }catch(e){}
+    };
     return b;
   }
 
@@ -1627,9 +1720,13 @@ function makeProxyForElement(el){
     inp.spellcheck = el.spellcheck;
     inp.inputMode = el.inputMode || "";
     inp.value = el.value || "";
+    const tbid = el.getAttribute("data-tb-id");
+    if(tbid) inp.setAttribute("data-tb-id", tbid);
+
     // Sincronizar com o input real (ex: pesquisar)
     const realId = el.id;
     inp.addEventListener("input", ()=>{
+      setActiveToolbar(2);
       try{
         const real = document.getElementById(realId);
         if(real){
@@ -1639,6 +1736,7 @@ function makeProxyForElement(el){
       }catch(e){}
     });
     inp.addEventListener("keydown", (e)=>{
+      setActiveToolbar(2);
       try{
         const real = document.getElementById(realId);
         if(real){
@@ -1656,14 +1754,17 @@ function makeProxyForElement(el){
   const s = document.createElement("span");
   s.className = el.className;
   s.textContent = el.textContent;
+  const tbid = el.getAttribute && el.getAttribute("data-tb-id");
+  if(tbid) s.setAttribute("data-tb-id", tbid);
   if(el.id) s.setAttribute("data-mirror-id", el.id);
   // Se a pílula for clicável (fileName), manter ação
   if(el.id === "fileName"){
     s.style.cursor = "pointer";
-    s.onclick = () => { try{ openRenameTabPopup(); }catch(e){} };
+    s.onclick = () => { try{ setActiveToolbar(2); openRenameTabPopup(); }catch(e){} };
   }
   return s;
 }
+
 
 function rebuildSecondToolbar(){
   const src = document.getElementById("toolbar");
@@ -1671,16 +1772,29 @@ function rebuildSecondToolbar(){
   if(!src || !dst) return;
 
   dst.innerHTML = "";
-  const kids = Array.from(src.children);
 
-  kids.forEach(el=>{
-    // Evitar duplicar o próprio container da segunda barra (segurança)
-    if(el.id === "toolbar2") return;
-    const proxy = makeProxyForElement(el);
+  // Lista dinâmica de itens existentes na barra 1 (inclui abas)
+  const existingIds = Array.from(src.querySelectorAll('[data-tb-id]'))
+    .map(el => el.getAttribute("data-tb-id"))
+    .filter(Boolean);
+
+  // Ordem própria da barra 2 (fallback: ordem atual da barra 1)
+  let order2 = readToolbarOrder(2);
+  if(!order2 || !order2.length) order2 = existingIds.slice();
+
+  // Sanear: manter apenas itens existentes e adicionar faltantes
+  const existing = new Set(existingIds);
+  order2 = order2.filter(id=>existing.has(id));
+  existingIds.forEach(id=>{ if(!order2.includes(id)) order2.push(id); });
+
+  // Montar proxies na ordem da barra 2
+  order2.forEach((id)=>{
+    const real = src.querySelector(`[data-tb-id="${CSS.escape(id)}"]`);
+    if(!real) return;
+    const proxy = makeProxyForElement(real);
     dst.appendChild(proxy);
   });
 }
-
 function syncSecondToolbarMirrors(){
   if(!secondToolbarVisible) return;
   const dst = document.getElementById("toolbar2");
@@ -1781,7 +1895,9 @@ function renderTabsOrganizer(){
 /* =====================
    TOOLBAR ORGANIZER
 ===================== */
-const TOOLBAR_ORDER_KEY = "EDITOR_HTML_TOOLBAR_ORDER_V1";
+const TOOLBAR_ORDER_KEY_1 = "EDITOR_HTML_TOOLBAR_ORDER_V1";
+const TOOLBAR_ORDER_KEY_2 = "EDITOR_HTML_TOOLBAR2_ORDER_V1";
+function toolbarOrderKey(toolbarId){ return (toolbarId === 2) ? TOOLBAR_ORDER_KEY_2 : TOOLBAR_ORDER_KEY_1; }
 
 const TOOLBAR_ITEMS = [
   {id:"btnMenu", label:"Menu"},
@@ -1818,13 +1934,14 @@ const TOOLBAR_ITEMS = [
   {id:"btnChars", label:"Chars"}
 ];
 
-function getToolbarElById(id){
-  return document.querySelector(`#toolbar [data-tb-id="${CSS.escape(id)}"]`);
+function getToolbarElById(id, toolbarId){
+  const root = (toolbarId === 2) ? "#toolbar2" : "#toolbar";
+  return document.querySelector(`${root} [data-tb-id="${CSS.escape(id)}"]`);
 }
 
-function readToolbarOrder(){
+function readToolbarOrder(toolbarId){
   try{
-    const raw = localStorage.getItem(TOOLBAR_ORDER_KEY);
+    const raw = localStorage.getItem(toolbarOrderKey(toolbarId));
     if(!raw) return null;
     const arr = JSON.parse(raw);
     if(Array.isArray(arr) && arr.length) return arr.filter(Boolean);
@@ -1832,29 +1949,34 @@ function readToolbarOrder(){
   return null;
 }
 
-function writeToolbarOrder(order){
-  try{ localStorage.setItem(TOOLBAR_ORDER_KEY, JSON.stringify(order)); }catch(e){}
+function writeToolbarOrder(toolbarId, order){
+  try{ localStorage.setItem(toolbarOrderKey(toolbarId), JSON.stringify(order)); }catch(e){}
 }
 
-function applyToolbarOrder(order){
-  const toolbar = document.getElementById("toolbar");
+function applyToolbarOrder(order, toolbarId){
+  // Barra 2 é reconstruída a partir da ordem salva (mantém abas no lugar certo)
+  if(toolbarId === 2){
+    try{ writeToolbarOrder(2, order); }catch(e){}
+    try{ if(secondToolbarVisible) rebuildSecondToolbar(); }catch(e){}
+    return;
+  }
+  const toolbar = (toolbarId === 2) ? document.getElementById("toolbar2") : document.getElementById("toolbar");
   const seen = new Set();
 
   order.forEach(id=>{
-    const el = getToolbarElById(id);
+    const el = getToolbarElById(id, toolbarId);
     if(el){
       toolbar.appendChild(el);
       seen.add(id);
     }
   });
 
-  // Garantir que itens novos/extra (se existirem) continuem acessíveis
-  TOOLBAR_ITEMS.forEach(it=>{
-    if(seen.has(it.id)) return;
-    const el = getToolbarElById(it.id);
-    if(el) toolbar.appendChild(el);
+  // Garantir que itens novos/extra (inclui botões de Abas) continuem acessíveis
+  Array.from(toolbar.querySelectorAll('[data-tb-id]')).forEach(el=>{
+    const id = el.getAttribute("data-tb-id");
+    if(!id || seen.has(id)) return;
+    toolbar.appendChild(el);
   });
-
 
   try{ if(secondToolbarVisible) rebuildSecondToolbar(); }catch(e){}
 }
@@ -1863,13 +1985,31 @@ function renderToolbarOrganizer(){
   const list = document.getElementById("toolbarList");
   list.innerHTML = "";
 
-  let order = readToolbarOrder();
-  if(!order) order = TOOLBAR_ITEMS.map(x=>x.id);
+  const tid = getActiveToolbar();
+
+  // Itens existentes na barra alvo (inclui abas)
+  const existingIds = getCurrentToolbarButtonOrder(tid);
+
+  let order = readToolbarOrder(tid);
+  if(!order || !order.length){
+    order = existingIds.length ? existingIds.slice() : TOOLBAR_ITEMS.map(x=>x.id);
+  }
 
   // Sanear: manter apenas itens existentes e adicionar faltantes
-  const existing = new Set(TOOLBAR_ITEMS.map(x=>x.id));
+  const existing = new Set(existingIds);
   order = order.filter(id=>existing.has(id));
-  TOOLBAR_ITEMS.forEach(it=>{ if(!order.includes(it.id)) order.push(it.id); });
+  existingIds.forEach(id=>{ if(!order.includes(id)) order.push(id); });
+
+  function labelForId(id){
+    const meta = TOOLBAR_ITEMS.find(x=>x.id === id);
+    if(meta) return meta.label;
+    if(String(id).startsWith("tab:")){
+      const tabId = String(id).slice(4);
+      const tab = getTabById(tabId);
+      return tab ? tab.label : ("Aba (" + tabId + ")");
+    }
+    return id;
+  }
 
   function move(index, dir){
     const j = index + dir;
@@ -1877,22 +2017,17 @@ function renderToolbarOrganizer(){
     const tmp = order[index];
     order[index] = order[j];
     order[j] = tmp;
-    writeToolbarOrder(order);
-    applyToolbarOrder(order);
+    writeToolbarOrder(tid, order);
+    applyToolbarOrder(order, tid);
     renderToolbarOrganizer();
   }
 
-  TOOLBAR_ITEMS.forEach((it)=>{
-    // Render na ordem atual
-  });
-
   order.forEach((id, i)=>{
-    const meta = TOOLBAR_ITEMS.find(x=>x.id === id) || {id, label:id};
     const row = document.createElement("div");
     row.className = "row";
     row.style.justifyContent = "space-between";
     row.innerHTML = `
-      <span class="pill" style="flex:1 1 auto">${meta.label}</span>
+      <span class="pill" style="flex:1 1 auto">${labelForId(id)}</span>
       <button class="btn" data-move="-1" style="min-width:64px">↑</button>
       <button class="btn" data-move="1" style="min-width:64px">↓</button>
     `;
@@ -1903,8 +2038,10 @@ function renderToolbarOrganizer(){
 }
 
 function initToolbarOrder(){
-  const order = readToolbarOrder();
-  if(order) applyToolbarOrder(order);
+  const order1 = readToolbarOrder(1);
+  if(order1) applyToolbarOrder(order1, 1);
+  const order2 = readToolbarOrder(2);
+  if(order2) applyToolbarOrder(order2, 2);
 }
 
 
