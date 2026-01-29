@@ -184,6 +184,7 @@ input[type="checkbox"], input[type="radio"]{
     <button class="btn" id="btnAbrir" data-tb-id="btnAbrir">Abrir</button>
     <button class="btn" id="btnSalvar" data-tb-id="btnSalvar">Salvar</button>
     <button class="btn" id="btnFerramentas" data-tb-id="btnFerramentas">Ferramentas</button>
+    <button class="btn" id="btnAddAba" data-tb-id="btnAddAba">Add Aba</button>
 
 
         <button class="btn" id="btnBackup" data-tb-id="btnBackup">Backup</button>
@@ -214,7 +215,10 @@ input[type="checkbox"], input[type="radio"]{
     <button class="btn" id="btnIrLinha" data-tb-id="btnIrLinha">Ir p/ linha</button>
         <button class="btn" id="btnSelecionarLinha" data-tb-id="btnSelecionarLinha">Selecionar Linha</button>
 <button class="btn" id="btnSubstituir" data-tb-id="btnSubstituir">Substituir</button>
-  </div>
+    <button class="btn" id="btnChars" data-tb-id="btnChars">Chars</button>
+    </div>
+
+  <div class="toolbar hidden" id="toolbar2"></div>
 
   <div class="editor-wrap">
     <textarea id="editor"></textarea>
@@ -269,8 +273,44 @@ input[type="checkbox"], input[type="radio"]{
     <div class="row">
       <button class="btn" id="tOrganizarAbas">Organizar Abas</button>
       <button class="btn" id="tOrganizarBarra">Barra Superior</button>
+      <button class="btn" id="tNovaBarra">Nova Barra</button>
+      <button class="btn" id="tExportConfig">Exportar.json</button>
+      <button class="btn" id="tImportConfig">Importar.json</button>
       <button class="btn" id="tImgsBase64">Imagens Base64</button>
       <button class="btn" id="tFechar">Fechar</button>
+    </div>
+    <div class="hr"></div>
+    <div id="toolsTabsDyn" class="row" style="gap:10px; flex-wrap:wrap"></div>
+  </div>
+</div>
+
+<!-- EXCLUIR ABA overlay -->
+<div class="overlay" id="deleteTabOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Excluir Aba</h3>
+    <div class="small" id="deleteTabMsg" style="margin-bottom:10px">
+      Você deseja excluir essa aba? Todo o conteúdo não salvo será perdido. Certifique-se de ter salvo o conteúdo antes de excluir a aba.
+    </div>
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="deleteTabOk">Ok</button>
+      <button class="btn" id="deleteTabCancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- RENOMEAR ABA overlay -->
+<div class="overlay" id="renameTabOverlay" aria-hidden="true">
+  <div class="box">
+    <h3>Renomear Aba</h3>
+    <div class="small" style="margin-bottom:10px">
+      Defina um nome para esta aba (apenas para identificação).
+    </div>
+    <input class="field" id="renameTabInput" placeholder="Nome da aba..." spellcheck="false">
+    <div class="hr"></div>
+    <div class="row">
+      <button class="btn" id="renameTabOk">Ok</button>
+      <button class="btn" id="renameTabClose">Fechar</button>
     </div>
   </div>
 </div>
@@ -459,6 +499,21 @@ let fontSize = 15;
 let lineWrap = false;
 let lintEnabled = false;
 
+// Segunda barra (toggle)
+const SECOND_TOOLBAR_KEY = "EDITOR_HTML_SECOND_TOOLBAR_VISIBLE_V1";
+let secondToolbarVisible = false;
+
+
+/* =====================
+   TABS (ABAS)
+===================== */
+let tabs = [
+  { id: "tab1", label: "Aba 1", fileName: "index.html", value: "", dirty: false }
+];
+let activeTabId = "tab1";
+let tabCount = 1;
+let tabLabelTimer = null;
+let pendingDeleteTabId = null;
 
 let searchMarks = [];
 let refreshTimer = null;
@@ -483,16 +538,200 @@ lint: false
 });
 cm.setSize("100%", "100%");
 
-function setDirty(v){ isDirty = v; updateFilePill(); }
+function setDirty(v){ isDirty = v; const t = getActiveTab(); if(t) t.dirty = !!v; updateFilePill(); }
 function updateFilePill(){
   const pill = document.getElementById("fileName");
   const star = isDirty ? " •alterado" : "";
   pill.textContent = `${currentFileName}${star}`;
+  try{ syncSecondToolbarMirrors(); }catch(e){}
+}
+
+/* =====================
+   TABS (ABAS) - helpers
+===================== */
+function getTabById(id){
+  return tabs.find(t => t.id === id) || null;
+}
+function getActiveTab(){
+  return getTabById(activeTabId);
+}
+function ensureTabButtons(){
+  // garante que exista o botão da Aba 1 no topo (sem mexer nos botões atuais)
+  if(!document.querySelector('#toolbar .tab-btn[data-tab-id="tab1"]')){
+    const btn = document.createElement("button");
+    btn.className = "btn tab-btn";
+    btn.textContent = "Aba 1";
+    btn.setAttribute("data-tab-id","tab1");
+    btn.onclick = ()=>switchTab("tab1");
+    // inserir após o botão "Add Aba" (ou após Ferramentas se não existir)
+    const addBtn = document.getElementById("btnAddAba");
+    const toolsBtn = document.getElementById("btnFerramentas");
+    const ref = addBtn || toolsBtn;
+    if(ref && ref.parentNode){
+      ref.parentNode.insertBefore(btn, ref.nextSibling);
+    }else{
+      document.getElementById("toolbar").appendChild(btn);
+    }
+  }
+  syncTabButtonsUI();
+  syncToolsTabsUI();
+}
+function syncTabButtonsUI(){
+  tabs.forEach(t=>{
+    let b = document.querySelector(`#toolbar .tab-btn[data-tab-id="${CSS.escape(t.id)}"]`);
+    if(!b){
+      if(t.id === "tab1") return;
+      b = document.createElement("button");
+      b.className = "btn tab-btn";
+      b.setAttribute("data-tab-id", t.id);
+      b.onclick = ()=>switchTab(t.id);
+      // inserir após o último botão de aba existente (ou após Add Aba)
+      const all = Array.from(document.querySelectorAll('#toolbar .tab-btn[data-tab-id]'));
+      const after = all.length ? all[all.length-1] : (document.getElementById("btnAddAba") || document.getElementById("btnFerramentas"));
+      if(after && after.parentNode) after.parentNode.insertBefore(b, after.nextSibling);
+      else document.getElementById("toolbar").appendChild(b);
+    }
+    b.textContent = t.label;
+    if(t.id === activeTabId) b.style.borderStyle = "solid";
+    else b.style.borderStyle = "";
+  });
+
+  // remover botões órfãos (abas deletadas)
+  Array.from(document.querySelectorAll('#toolbar .tab-btn[data-tab-id]')).forEach(b=>{
+    const id = b.getAttribute("data-tab-id");
+    if(!tabs.some(t=>t.id === id)) b.remove();
+  });
+
+  try{ if(secondToolbarVisible) rebuildSecondToolbar(); }catch(e){}
+}
+function syncToolsTabsUI(){
+  const box = document.getElementById("toolsTabsDyn");
+  if(!box) return;
+  box.innerHTML = "";
+  // Apenas abas adicionais no Ferramentas (Aba 2+)
+  tabs.filter(t=>t.id !== "tab1").forEach(t=>{
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.textContent = t.label;
+    btn.onclick = () => {
+      pendingDeleteTabId = t.id;
+      closeOverlay(toolsOverlay);
+      openOverlay(deleteTabOverlay);
+    };
+    box.appendChild(btn);
+  });
+}
+function deriveTabLabelFromContent(content, fallback){
+  const lines = String(content || "").split(/\r?\n/);
+  let first = "";
+  for(const ln of lines){
+    const t = ln.trim();
+    if(t){ first = t; break; }
+  }
+  if(!first) return fallback;
+  // remove tags muito longas e limita tamanho
+  first = first.replace(/\s+/g," ").trim();
+  if(first.length > 22) first = first.slice(0,22) + "…";
+  return first;
+}
+function updateActiveTabLabelFromContent(){
+  const t = getActiveTab();
+  if(!t) return;
+  if(t.customLabel) return;
+  const fallback = (t.id === "tab1") ? "Aba 1" : ("Aba " + (t._num || "?"));
+  const newLabel = deriveTabLabelFromContent(cm.getValue(), fallback);
+  if(newLabel && newLabel !== t.label){
+    t.label = newLabel;
+    // manter o nome do arquivo coerente com a aba ativa (sem mudar extensão)
+    if(t.id !== "tab1"){
+      t.fileName = (newLabel.replace(/[\\/:*?"<>|]+/g," ").trim() || t.fileName).slice(0,48) + ".html";
+    }
+    if(t.id === activeTabId){
+      currentFileName = t.fileName || currentFileName;
+      updateFilePill();
+    }
+    syncTabButtonsUI();
+    syncToolsTabsUI();
+    saveAutosave();
+  }
+}
+function scheduleActiveTabLabelUpdate(){
+  if(tabLabelTimer) clearTimeout(tabLabelTimer);
+  tabLabelTimer = setTimeout(()=>{ try{ updateActiveTabLabelFromContent(); }catch(e){} }, 250);
+}
+function saveCurrentTabContent(){
+  const t = getActiveTab();
+  if(!t) return;
+  t.value = cm.getValue();
+  t.dirty = isDirty;
+}
+function switchTab(id){
+  const t = getTabById(id);
+  if(!t) return;
+
+  // salvar conteúdo atual antes de trocar
+  saveCurrentTabContent();
+
+  activeTabId = id;
+  currentHandle = null; // cada aba é "seu arquivo" local (mantém o resto intacto)
+  currentFileName = t.fileName || currentFileName;
+
+  cm.setValue(t.value || "");
+  isDirty = !!t.dirty;
+  updateFilePill();
+
+  // reset search matches para não confundir
+  try{
+    lastQuery = "";
+    refreshMatches(false);
+  }catch(e){}
+
+  syncTabButtonsUI();
+  syncToolsTabsUI();
+  saveAutosave();
+  cm.focus();
+}
+function addAba(){
+  // salva a aba atual antes de criar
+  saveCurrentTabContent();
+
+  tabCount += 1;
+  const id = "tab" + tabCount;
+  const fallbackLabel = "Aba " + tabCount;
+
+  const t = { id, label: fallbackLabel, fileName: ("aba " + tabCount + ".html"), value: "", dirty: false, _num: tabCount, customLabel: false };
+  tabs.push(t);
+
+  ensureTabButtons();
+  switchTab(id);
+}
+function deleteAbaById(id){
+  if(id === "tab1") return; // não permite excluir a Aba 1
+  const idx = tabs.findIndex(t=>t.id === id);
+  if(idx < 0) return;
+
+  const wasActive = (activeTabId === id);
+  tabs.splice(idx, 1);
+
+  // se estava ativa, volta para Aba 1
+  if(wasActive){
+    activeTabId = "tab1";
+    const t1 = getTabById("tab1");
+    currentFileName = t1?.fileName || "index.html";
+    cm.setValue(t1?.value || "");
+    isDirty = !!t1?.dirty;
+    updateFilePill();
+  }
+
+  syncTabButtonsUI();
+  syncToolsTabsUI();
+  saveAutosave();
 }
 
 cm.on("change", () => {
   setDirty(true);
   scheduleAutosave();
+  scheduleActiveTabLabelUpdate();
   if (document.getElementById("search").value.trim()) scheduleRefreshMatches(false);
   // manter destaques atualizados quando ativo
   if(
@@ -513,15 +752,59 @@ const toolsOverlay = document.getElementById("toolsOverlay");
 const codesOverlay = document.getElementById("codesOverlay");
 const lintOverlay = document.getElementById("lintOverlay");
 const tabsOverlay = document.getElementById("tabsOverlay");
+const deleteTabOverlay = document.getElementById("deleteTabOverlay");
 const replaceOverlay = document.getElementById("replaceOverlay");
 const previewOverlay = document.getElementById("previewOverlay");
 const toolbarOverlay = document.getElementById("toolbarOverlay");
+const renameTabOverlay = document.getElementById("renameTabOverlay");
+
 
 const selectLineOverlay = document.getElementById("selectLineOverlay");
 function openOverlay(el){ el.style.display = "flex"; el.setAttribute("aria-hidden","false"); }
 function closeOverlay(el){ el.style.display = "none"; el.setAttribute("aria-hidden","true"); }
 
-[menuOverlay, toolsOverlay, codesOverlay, lintOverlay, tabsOverlay, toolbarOverlay, selectLineOverlay, replaceOverlay, previewOverlay].forEach(ov => {
+function openRenameTabPopup(){
+  const t = getActiveTab();
+  if(!t) return;
+  const inp = document.getElementById("renameTabInput");
+  if(inp){
+    inp.value = String(t.label || "").trim();
+    setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(e){} }, 0);
+  }
+  openOverlay(renameTabOverlay);
+}
+
+(function(){
+  const ok = document.getElementById("renameTabOk");
+  const close = document.getElementById("renameTabClose");
+  const inp = document.getElementById("renameTabInput");
+
+  if(close) close.onclick = () => closeOverlay(renameTabOverlay);
+  if(ok) ok.onclick = () => {
+    try{
+      const t = getActiveTab();
+      if(!t) return;
+      const v = (inp ? inp.value : "").trim();
+      if(!v){ closeOverlay(renameTabOverlay); return; }
+      const name = v.replace(/\s+/g, " ").trim().slice(0, 48);
+      t.label = name;
+      t.customLabel = true;
+      syncTabButtonsUI();
+      syncToolsTabsUI();
+      saveAutosave();
+      closeOverlay(renameTabOverlay);
+    }catch(e){}
+  };
+
+  if(inp){
+    inp.addEventListener("keydown", (e)=>{
+      if(e.key === "Enter"){ e.preventDefault(); if(ok) ok.click(); }
+    });
+  }
+})();
+
+
+[menuOverlay, toolsOverlay, codesOverlay, lintOverlay, tabsOverlay, toolbarOverlay, selectLineOverlay, replaceOverlay, previewOverlay, deleteTabOverlay, renameTabOverlay].forEach(ov => {
   ov.addEventListener("click", (e)=>{ if(e.target === ov) closeOverlay(ov); });
 });
 
@@ -791,6 +1074,11 @@ document.getElementById("btnNovo").onclick = novo;
 document.getElementById("btnAbrir").onclick = abrir;
 document.getElementById("btnSalvar").onclick = salvar;
 document.getElementById("btnFerramentas").onclick = () => openOverlay(toolsOverlay);
+
+// Renomear aba pela pílula pontilhada (nome do arquivo/aba)
+document.getElementById("fileName").onclick = () => { try{ openRenameTabPopup(); }catch(e){} };
+
+document.getElementById("btnAddAba").onclick = addAba;
 document.getElementById("btnBackup").onclick = backupButtonsPosition;
 document.getElementById("btnCodigos").onclick = () => openOverlay(codesOverlay);
 document.getElementById("btnTelaCheia").onclick = toggleFullscreen;
@@ -842,6 +1130,9 @@ document.getElementById("btnFormatar").onclick = formatar;
 document.getElementById("btnIrLinha").onclick = irLinha;
 document.getElementById("btnSubstituir").onclick = () => openOverlay(replaceOverlay);
 
+document.getElementById("btnChars").onclick = contarChars;
+
+
 document.getElementById("btnPrev").onclick = findPrev;
 document.getElementById("btnNext").onclick = findNext;
 document.getElementById("btnLimparPesquisa").onclick = limparPesquisa;
@@ -867,6 +1158,14 @@ function limparPesquisa(){
     searchInput.focus();
   }catch(e){}
 }
+
+function contarChars(){
+  try{
+    const n = cm.getValue().length;
+    alert(`Caracteres (com espaços): ${n}`);
+  }catch(e){}
+}
+
 
 /* =====================
    IMAGENS -> BASE64
@@ -1126,6 +1425,295 @@ document.getElementById("bExportJson").onclick = exportButtonsJson;
 document.getElementById("bImportJson").onclick = importButtonsJson;
 document.getElementById("bFecharBackup").onclick = () => closeOverlay(backupOverlay);
 
+/* =====================
+   CONFIG (Importar/Exportar do Editor)
+===================== */
+const EDITOR_CONFIG_VERSION = "EDITOR_HTML_CONFIG_V1";
+
+function getEditorConfigPayload(){
+  try{
+    saveCurrentTabContent();
+    return {
+      version: EDITOR_CONFIG_VERSION,
+      ts: Date.now(),
+      ui: {
+        fontSize,
+        lineWrap,
+        lintEnabled,
+        secondToolbarVisible
+      },
+      files: {
+        activeTabId,
+        tabs: tabs.map(t=>({
+          id: t.id,
+          label: t.label,
+          customLabel: !!t.customLabel,
+          fileName: t.fileName,
+          value: t.value,
+          dirty: !!t.dirty,
+          _num: t._num
+        }))
+      },
+      layout: {
+        toolbarOrder: getCurrentToolbarButtonOrder(),
+        menuOrder: readMenuOrder() || null
+      }
+    };
+  }catch(e){
+    return null;
+  }
+}
+
+function exportEditorConfigJson(){
+  try{
+    const payload = getEditorConfigPayload();
+    if(!payload) return alert("Falha ao exportar.");
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "EditorConfig.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 500);
+  }catch(e){
+    alert("Falha ao exportar.");
+  }
+}
+
+function importEditorConfigJson(){
+  try{
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      if(!file) return;
+
+      try{
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        // tabs
+        if(data && data.files && Array.isArray(data.files.tabs) && data.files.tabs.length){
+          tabs = data.files.tabs.map((t,i)=>({
+            id: t.id || ("tab"+(i+1)),
+            label: t.label || ("Aba "+(i+1)),
+            customLabel: !!t.customLabel,
+            fileName: t.fileName || ((t.label||("aba "+(i+1))) + ".html"),
+            value: (typeof t.value === "string") ? t.value : "",
+            dirty: !!t.dirty,
+            _num: t._num || (i+1)
+          }));
+          tabCount = Math.max(1, ...tabs.map(t=>{
+            const n = parseInt(String(t.id||"").replace("tab",""),10);
+            return Number.isFinite(n) ? n : 1;
+          }));
+          activeTabId = (data.files.activeTabId && tabs.some(t=>t.id === data.files.activeTabId)) ? data.files.activeTabId : (tabs[0]?.id || "tab1");
+          const active = getActiveTab() || tabs[0];
+          activeTabId = active.id;
+          cm.setValue(active.value || "");
+          currentFileName = active.fileName || currentFileName;
+          isDirty = !!active.dirty;
+          updateFilePill();
+          ensureTabButtons();
+        }
+
+        // layout
+        const tOrder = data && data.layout && Array.isArray(data.layout.toolbarOrder) ? data.layout.toolbarOrder : null;
+        const mOrder = data && data.layout && Array.isArray(data.layout.menuOrder) ? data.layout.menuOrder : null;
+
+        if(tOrder){
+          writeToolbarOrder(tOrder);
+          applyToolbarOrder(tOrder);
+        }
+        if(mOrder){
+          writeMenuOrder(mOrder);
+        }
+
+        // ui
+        if(data && data.ui){
+          if(typeof data.ui.fontSize === "number") setFont(data.ui.fontSize);
+          if(typeof data.ui.lineWrap === "boolean"){
+            lineWrap = data.ui.lineWrap;
+            cm.setOption("lineWrapping", lineWrap);
+            const tb = document.getElementById("btnQuebra");
+            if(tb) tb.textContent = "Quebra: " + (lineWrap ? "ON" : "OFF");
+          }
+          if(typeof data.ui.lintEnabled === "boolean") setLint(data.ui.lintEnabled);
+          if(typeof data.ui.secondToolbarVisible === "boolean"){
+            secondToolbarVisible = data.ui.secondToolbarVisible;
+            try{ localStorage.setItem(SECOND_TOOLBAR_KEY, secondToolbarVisible ? "1" : "0"); }catch(e){}
+            applySecondToolbarVisibility();
+          }
+        }
+
+        // refresh UI pieces
+        try{ syncTabButtonsUI(); }catch(e){}
+        try{ syncToolsTabsUI(); }catch(e){}
+        try{ renderMenu(); }catch(e){}
+        try{ renderToolbarOrganizer(); }catch(e){}
+
+        saveAutosave();
+        alert("Importação concluída!");
+        closeOverlay(toolsOverlay);
+      }catch(e){
+        alert("Arquivo inválido ou corrompido.");
+      }
+    };
+    input.click();
+  }catch(e){
+    alert("Falha ao importar.");
+  }
+}
+
+/* =====================
+   SEGUNDA BARRA (clone funcional)
+===================== */
+function readSecondToolbarVisible(){
+  try{
+    const v = localStorage.getItem(SECOND_TOOLBAR_KEY);
+    return v === "1";
+  }catch(e){}
+  return false;
+}
+
+function applySecondToolbarVisibility(){
+  const tb2 = document.getElementById("toolbar2");
+  if(!tb2) return;
+  if(secondToolbarVisible){
+    tb2.classList.remove("hidden");
+    rebuildSecondToolbar();
+    syncSecondToolbarMirrors();
+  }else{
+    tb2.classList.add("hidden");
+  }
+}
+
+function toggleSecondToolbar(){
+  secondToolbarVisible = !secondToolbarVisible;
+  try{ localStorage.setItem(SECOND_TOOLBAR_KEY, secondToolbarVisible ? "1" : "0"); }catch(e){}
+  applySecondToolbarVisibility();
+}
+
+function makeProxyForElement(el){
+  const tag = el.tagName.toLowerCase();
+
+  if(tag === "button"){
+    const b = document.createElement("button");
+    b.className = el.className;
+    b.textContent = el.textContent;
+    // manter o mesmo estilo visual (aba ativa etc.)
+    b.style.cssText = el.style.cssText || "";
+    // Aba?
+    if(el.classList.contains("tab-btn")){
+      const tid = el.getAttribute("data-tab-id");
+      b.setAttribute("data-tab-id", tid || "");
+      b.onclick = () => { try{ if(tid) switchTab(tid); }catch(e){} };
+      return b;
+    }
+    const id = el.id;
+    b.onclick = () => { try{ if(id) document.getElementById(id).click(); }catch(e){} };
+    return b;
+  }
+
+  if(tag === "input"){
+    const inp = document.createElement("input");
+    inp.className = el.className;
+    inp.type = el.type || "text";
+    inp.placeholder = el.placeholder || "";
+    inp.autocomplete = el.autocomplete || "off";
+    inp.spellcheck = el.spellcheck;
+    inp.inputMode = el.inputMode || "";
+    inp.value = el.value || "";
+    // Sincronizar com o input real (ex: pesquisar)
+    const realId = el.id;
+    inp.addEventListener("input", ()=>{
+      try{
+        const real = document.getElementById(realId);
+        if(real){
+          real.value = inp.value;
+          real.dispatchEvent(new Event("input", {bubbles:true}));
+        }
+      }catch(e){}
+    });
+    inp.addEventListener("keydown", (e)=>{
+      try{
+        const real = document.getElementById(realId);
+        if(real){
+          // Copia o valor antes de repassar o evento
+          real.value = inp.value;
+          const ev = new KeyboardEvent("keydown", {key:e.key, shiftKey:e.shiftKey, ctrlKey:e.ctrlKey, metaKey:e.metaKey, altKey:e.altKey, bubbles:true});
+          real.dispatchEvent(ev);
+        }
+      }catch(err){}
+    });
+    return inp;
+  }
+
+  // spans/pills
+  const s = document.createElement("span");
+  s.className = el.className;
+  s.textContent = el.textContent;
+  if(el.id) s.setAttribute("data-mirror-id", el.id);
+  // Se a pílula for clicável (fileName), manter ação
+  if(el.id === "fileName"){
+    s.style.cursor = "pointer";
+    s.onclick = () => { try{ openRenameTabPopup(); }catch(e){} };
+  }
+  return s;
+}
+
+function rebuildSecondToolbar(){
+  const src = document.getElementById("toolbar");
+  const dst = document.getElementById("toolbar2");
+  if(!src || !dst) return;
+
+  dst.innerHTML = "";
+  const kids = Array.from(src.children);
+
+  kids.forEach(el=>{
+    // Evitar duplicar o próprio container da segunda barra (segurança)
+    if(el.id === "toolbar2") return;
+    const proxy = makeProxyForElement(el);
+    dst.appendChild(proxy);
+  });
+}
+
+function syncSecondToolbarMirrors(){
+  if(!secondToolbarVisible) return;
+  const dst = document.getElementById("toolbar2");
+  if(!dst) return;
+
+  // Atualizar pills espelhadas (searchCount e fileName)
+  dst.querySelectorAll("[data-mirror-id]").forEach(sp=>{
+    const id = sp.getAttribute("data-mirror-id");
+    const real = id ? document.getElementById(id) : null;
+    if(real) sp.textContent = real.textContent;
+  });
+
+  // Atualizar estilo de abas ativas (borda)
+  const realTabs = Array.from(document.querySelectorAll('#toolbar .tab-btn[data-tab-id]'));
+  const proxyTabs = Array.from(dst.querySelectorAll('.tab-btn[data-tab-id]'));
+  proxyTabs.forEach(pb=>{
+    const tid = pb.getAttribute("data-tab-id");
+    const rt = realTabs.find(x=>x.getAttribute("data-tab-id") === tid);
+    if(rt){
+      pb.textContent = rt.textContent;
+      pb.style.borderStyle = rt.style.borderStyle || "";
+    }
+  });
+
+  // Sincronizar input de pesquisa (valor)
+  try{
+    const real = document.getElementById("search");
+    const proxy = Array.from(dst.querySelectorAll("input")).find(x=>x.placeholder === (real?.placeholder||"") || x.type === "search");
+    if(real && proxy && proxy.value !== real.value) proxy.value = real.value;
+  }catch(e){}
+}
+
+
 
 
 function setFont(size){
@@ -1157,8 +1745,24 @@ document.getElementById("tOrganizarBarra").onclick = () => {
   openOverlay(toolbarOverlay);
 };
 document.getElementById("tImgsBase64").onclick = imagensParaBase64;
+document.getElementById("tNovaBarra").onclick = () => { try{ toggleSecondToolbar(); }catch(e){} };
+document.getElementById("tExportConfig").onclick = exportEditorConfigJson;
+document.getElementById("tImportConfig").onclick = importEditorConfigJson;
+
 document.getElementById("tabsFechar").onclick = () => closeOverlay(tabsOverlay);
 document.getElementById("tbFechar").onclick = () => closeOverlay(toolbarOverlay);
+
+document.getElementById("deleteTabOk").onclick = () => {
+  if(pendingDeleteTabId){
+    deleteAbaById(pendingDeleteTabId);
+  }
+  pendingDeleteTabId = null;
+  closeOverlay(deleteTabOverlay);
+};
+document.getElementById("deleteTabCancel").onclick = () => {
+  pendingDeleteTabId = null;
+  closeOverlay(deleteTabOverlay);
+};
 
 function renderTabsOrganizer(){
   const el = document.getElementById("tabsList");
@@ -1185,6 +1789,7 @@ const TOOLBAR_ITEMS = [
   {id:"btnAbrir", label:"Abrir"},
   {id:"btnSalvar", label:"Salvar"},
   {id:"btnFerramentas", label:"Ferramentas"},
+  {id:"btnAddAba", label:"Add Aba"},
     {id:"btnBackup", label:"Backup"},
 {id:"btnCodigos", label:"Códigos"},
   {id:"btnTelaCheia", label:"Tela Cheia"},
@@ -1209,7 +1814,8 @@ const TOOLBAR_ITEMS = [
   {id:"btnFormatar", label:"Formatar"},
   {id:"btnIrLinha", label:"Ir p/ linha"},
     {id:"btnSelecionarLinha", label:"Selecionar Linha"},
-{id:"btnSubstituir", label:"Substituir"}
+{id:"btnSubstituir", label:"Substituir"},
+  {id:"btnChars", label:"Chars"}
 ];
 
 function getToolbarElById(id){
@@ -1248,6 +1854,9 @@ function applyToolbarOrder(order){
     const el = getToolbarElById(it.id);
     if(el) toolbar.appendChild(el);
   });
+
+
+  try{ if(secondToolbarVisible) rebuildSecondToolbar(); }catch(e){}
 }
 
 function renderToolbarOrganizer(){
@@ -1382,6 +1991,7 @@ function updateSearchPill(){
   const total = matches.length;
   const cur = total ? (matchIndex + 1) : 0;
   pill.textContent = `${cur} de ${total}`;
+  try{ syncSecondToolbarMirrors(); }catch(e){}
 }
 
 function findNext(){
@@ -1534,6 +2144,8 @@ fileInput.addEventListener("change", async () => {
   if(!f) return;
   const text = await f.text();
   cm.setValue(text);
+  // atualizar conteúdo da aba ativa
+  try{ const t = getActiveTab(); if(t){ t.value = text; t.fileName = (f.name || t.fileName); if(t.id==="tab1"){ t.label="Aba 1"; t.customLabel=false; } } }catch(e){}
   currentFileName = f.name || "arquivo.html";
   currentHandle = null;
   setDirty(false);
@@ -1556,8 +2168,11 @@ async function abrir(){
       const file = await handle.getFile();
       const text = await file.text();
       cm.setValue(text);
+      // atualizar conteúdo da aba ativa
+      try{ const t = getActiveTab(); if(t){ t.value = text; t.fileName = (file.name || t.fileName); if(t.id==="tab1"){ t.label="Aba 1"; t.customLabel=false; } } }catch(e){}
       currentFileName = file.name || "arquivo.html";
       setDirty(false);
+      try{ const t = getActiveTab(); if(t){ t.fileName = currentFileName; } }catch(e){}
       saveAutosave();
       return;
     }catch(err){}
@@ -1568,54 +2183,59 @@ async function abrir(){
 async function salvar(){
   const data = cm.getValue();
 
-  // 1) write to existing handle
-  if(currentHandle && currentHandle.createWritable){
-    try{
-      const writable = await currentHandle.createWritable();
-      await writable.write(data);
-      await writable.close();
-      setDirty(false);
-      saveAutosave();
-      return;
-    }catch(err){}
+  function generateCopyName(name){
+    const safe = String(name || "index.html").trim() || "index.html";
+    const dot = safe.lastIndexOf(".");
+    const base = dot > 0 ? safe.slice(0, dot) : safe;
+    const ext = dot > 0 ? safe.slice(dot) : ".html";
+    const d = new Date();
+    const pad = (n)=>String(n).padStart(2,"0");
+    const stamp = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `${base}_copia_${stamp}${ext}`;
   }
 
-  // 2) save as
+  const saveName = generateCopyName(currentFileName || "index.html");
+
+  // SEMPRE criar um novo arquivo (nunca sobrescrever o atual)
   if(window.showSaveFilePicker){
     try{
       const handle = await window.showSaveFilePicker({
-        suggestedName: currentFileName || "index.html",
+        suggestedName: saveName,
         types: [
           { description: "HTML", accept: {"text/html":[".html",".htm"]} },
           { description: "Texto", accept: {"text/plain":[".txt"]} }
         ]
       });
       if(handle){
-        currentHandle = handle;
         const writable = await handle.createWritable();
         await writable.write(data);
         await writable.close();
-        const file = await handle.getFile();
-        currentFileName = file.name || currentFileName;
+        // Não guardar handle: próxima vez também será um novo arquivo
+        currentHandle = null;
         setDirty(false);
         saveAutosave();
         return;
       }
-    }catch(err){}
+    }catch(err){
+      // cancelado ou bloqueado
+    }
   }
 
-  // 3) fallback download
-  const blob = new Blob([data], {type:"text/plain;charset=utf-8"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = currentFileName || "index.html";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  setDirty(false);
-  saveAutosave();
+  // fallback download (sempre novo arquivo)
+  try{
+    const blob = new Blob([data], {type:"text/plain;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = saveName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    currentHandle = null;
+    setDirty(false);
+    saveAutosave();
+  }catch(e){}
 }
 
 function novo(){
@@ -1624,6 +2244,7 @@ function novo(){
     if(!ok) return;
   }
   cm.setValue("");
+  try{ const t = getActiveTab(); if(t){ t.value = ""; t.fileName = "index.html"; if(t.id==="tab1") t.label="Aba 1"; } }catch(e){}
   currentHandle = null;
   currentFileName = "index.html";
   setDirty(false);
@@ -1680,7 +2301,23 @@ function scheduleAutosave(){
 }
 function saveAutosave(){
   try{
-    const payload = { name: currentFileName, value: cm.getValue(), ts: Date.now() };
+    // sempre persistir o conteúdo atual na aba ativa antes de salvar
+    saveCurrentTabContent();
+
+    const payload = {
+      v: 2,
+      ts: Date.now(),
+      activeTabId,
+      tabs: tabs.map(t=>({
+        id: t.id,
+        label: t.label,
+        customLabel: !!t.customLabel,
+        fileName: t.fileName,
+        value: t.value,
+        dirty: !!t.dirty,
+        _num: t._num
+      }))
+    };
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
   }catch(e){}
 }
@@ -1689,14 +2326,47 @@ function loadAutosave(){
     const raw = localStorage.getItem(AUTOSAVE_KEY);
     if(!raw) return;
     const payload = JSON.parse(raw);
+
+    // Back-compat (v1): {name, value, ts}
     if(payload && typeof payload.value === "string"){
+      tabs = [{ id:"tab1", label:"Aba 1", fileName: payload.name || "index.html", value: payload.value, dirty:false, _num:1 }];
+      activeTabId = "tab1";
+      tabCount = 1;
       cm.setValue(payload.value);
       currentFileName = payload.name || currentFileName;
       setDirty(false);
       updateFilePill();
+      ensureTabButtons();
+      return;
+    }
+
+    if(payload && Array.isArray(payload.tabs) && payload.tabs.length){
+      tabs = payload.tabs.map((t,i)=>({
+        id: t.id || ("tab"+(i+1)),
+        label: t.label || ("Aba "+(i+1)),
+        customLabel: !!t.customLabel,
+        fileName: t.fileName || ((t.label||("aba "+(i+1))) + ".html"),
+        value: (typeof t.value === "string") ? t.value : "",
+        dirty: !!t.dirty,
+        _num: t._num || (i+1)
+      }));
+
+      tabCount = Math.max(1, ...tabs.map(t=>{
+        const n = parseInt(String(t.id||"").replace("tab",""),10);
+        return Number.isFinite(n) ? n : 1;
+      }));
+      activeTabId = payload.activeTabId && tabs.some(t=>t.id === payload.activeTabId) ? payload.activeTabId : "tab1";
+      const active = getActiveTab() || tabs[0];
+      activeTabId = active.id;
+      cm.setValue(active.value || "");
+      currentFileName = active.fileName || currentFileName;
+      isDirty = !!active.dirty;
+      updateFilePill();
+      ensureTabButtons();
     }
   }catch(e){}
 }
+
 
 /* Garantia extra: evita perder trabalho se fechar/atualizar antes do debounce do autosave */
 (function setupAutosaveGuards(){
@@ -1716,7 +2386,11 @@ updateFilePill();
 setFont(fontSize);
 const _tbQuebra = document.getElementById("btnQuebra"); if(_tbQuebra) _tbQuebra.textContent = "Quebra: " + (lineWrap ? "ON" : "OFF");
 loadAutosave();
+ensureTabButtons();
 initToolbarOrder();
+secondToolbarVisible = readSecondToolbarVisible();
+applySecondToolbarVisibility();
+
 setLint(false);
 
 /* Shortcuts */
