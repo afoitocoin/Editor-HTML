@@ -1,4 +1,4 @@
-const CACHE_NAME = "editor-html-v11";
+const CACHE_NAME = "editor-html-v12";
 
 const CORE_ASSETS = [
 
